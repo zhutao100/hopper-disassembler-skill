@@ -1,0 +1,50 @@
+# Portable root config (works with both pre-commit and prek)
+# - Keep this file small ("thin root").
+# - Put language-specific hooks in per-subproject configs (workspace mode) or use files: scoping.
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        require_serial: true
+      - id: end-of-file-fixer
+        require_serial: true
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+        pass_filenames: false
+
+  - repo: https://github.com/akaihola/darker
+    rev: v3.0.0
+    hooks:
+      - id: darker
+        args:
+          - --line-length=100
+        additional_dependencies:
+          - black
+
+  - repo: https://github.com/pycqa/isort
+    rev: 7.0.0
+    hooks:
+      - id: isort
+        args: [ --profile=black ]
+
+  - repo: local
+    hooks:
+      - id: shfmt
+        name: shfmt (write)
+        language: system
+        entry: shfmt -w -i 4 -ci
+        types: [shell]
+        require_serial: true
+
+      - id: shellcheck
+        name: shellcheck
+        language: system
+        entry: shellcheck -x
+        types: [shell]
