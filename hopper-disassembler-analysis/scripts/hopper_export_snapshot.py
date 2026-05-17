@@ -334,10 +334,13 @@ def default_output_path(document: Any) -> Path:
 def collect_snapshot(document: Any) -> dict[str, Any]:
     full_export = env_flag("HOPPER_SKILL_FULL_EXPORT", False)
     high_cap = 10**9
+    max_procedures = high_cap if full_export else env_int("HOPPER_SKILL_MAX_PROCEDURES", 500)
+    max_strings = high_cap if full_export else env_int("HOPPER_SKILL_MAX_STRINGS", 2000)
+    max_names = high_cap if full_export else env_int("HOPPER_SKILL_MAX_NAMES", 3000)
     config: dict[str, int | bool] = {
-        "max_procedures": env_int("HOPPER_SKILL_MAX_PROCEDURES", high_cap if full_export else 500),
-        "max_strings": env_int("HOPPER_SKILL_MAX_STRINGS", high_cap if full_export else 2000),
-        "max_names": env_int("HOPPER_SKILL_MAX_NAMES", high_cap if full_export else 3000),
+        "max_procedures": max_procedures,
+        "max_strings": max_strings,
+        "max_names": max_names,
         "max_basic_blocks": env_int("HOPPER_SKILL_MAX_BASIC_BLOCKS", 64),
         "max_instructions_per_block": env_int("HOPPER_SKILL_MAX_INSTRUCTIONS_PER_BLOCK", 8),
         "max_call_refs": env_int("HOPPER_SKILL_MAX_CALL_REFS", 64),

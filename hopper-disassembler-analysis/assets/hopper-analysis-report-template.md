@@ -6,6 +6,7 @@
 - Architecture:
 - Hopper version:
 - Snapshot:
+- Export caps:
 
 ## Executive Summary
 
@@ -42,6 +43,10 @@
 scripts/run_hopper_export.sh --output /tmp/target.hopper-snapshot.json /path/to/target
 scripts/hopper_mcp_probe.py --json
 ```
+
+- Exact target path:
+- Source checkout path, if used:
+- MCP tools used:
 
 ## Notes
 

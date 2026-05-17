@@ -2,6 +2,19 @@
 
 Use this reference when writing or modifying scripts that run inside Hopper.
 
+## Contents
+
+- [Document Model](#document-model)
+- [Script Entrypoint Template](#script-entrypoint-template)
+- [Avoid Main-Thread Deadlocks](#avoid-main-thread-deadlocks)
+- [Enumerate Segments and Sections](#enumerate-segments-and-sections)
+- [Enumerate Procedures](#enumerate-procedures)
+- [Walk Basic Blocks and Instructions](#walk-basic-blocks-and-instructions)
+- [Strings and Names](#strings-and-names)
+- [Cross-References](#cross-references)
+- [Comments, Labels, Tags, and Bookmarks](#comments-labels-tags-and-bookmarks)
+- [Pseudocode Discipline](#pseudocode-discipline)
+
 ## Document Model
 
 Hopper scripts start from the active `Document`.
@@ -21,6 +34,45 @@ The public model is:
 - `Procedure`: function entry, basic blocks, locals, tags, callers, callees, pseudocode.
 - `BasicBlock`: start/end addresses and successor edges.
 - `Instruction`: architecture, mnemonic, raw/formatted arguments, length, jump classification.
+
+## Script Entrypoint Template
+
+Use this for custom scripts that run directly through `hopper -Y script.py`:
+
+```python
+from __future__ import annotations
+
+from pathlib import Path
+
+
+def main() -> int:
+    document = Document.getCurrentDocument()
+    if document is None:
+        print("No active Hopper document.")
+        return 2
+
+    output = Path("/tmp/hopper-custom-export.txt")
+    output.write_text(document.getDocumentName() + "\n", encoding="utf-8")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+Hopper injects `Document`, `Segment`, `Procedure`, and related classes into the script's global namespace. If a wrapper dispatches from one Hopper Python script to another file, preserve those globals:
+
+```python
+exporter = "/path/to/real_script.py"
+with open(exporter, "r", encoding="utf-8") as handle:
+    source = handle.read()
+
+namespace = dict(globals())
+namespace.update({"__name__": "__main__", "__file__": exporter})
+exec(compile(source, exporter, "exec"), namespace)
+```
+
+Do not use `runpy.run_path()` for Hopper-dispatched scripts; it starts a new namespace without the injected Hopper API classes.
 
 ## Avoid Main-Thread Deadlocks
 
@@ -85,6 +137,13 @@ Procedure detail methods:
 - `procedure.getAllCallers()`
 - `procedure.getAllCallees()`
 - `procedure.decompile()`
+
+Local variables expose method accessors:
+
+```python
+for variable in procedure.getLocalVariableList():
+    print(variable.name(), variable.displacement())
+```
 
 Call references expose `fromAddress()`, `toAddress()`, and `type()`.
 

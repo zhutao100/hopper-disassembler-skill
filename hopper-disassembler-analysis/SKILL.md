@@ -1,70 +1,122 @@
 ---
 name: hopper-disassembler-analysis
-description: Use Hopper Disassembler on macOS to inspect binaries, app bundles, Mach-O files, Hopper databases, procedures, call graphs, strings, xrefs, pseudocode, and live Hopper MCP sessions. Trigger when the user asks for reverse engineering, static binary analysis, macOS app binary inspection, Hopper automation, Hopper Python scripting, Hopper MCP setup, or evidence-backed reports from local executables.
+description: Use Hopper Disassembler on macOS to inspect binaries, app bundles, Mach-O files, universal slices, Hopper databases, procedures, call graphs, strings, xrefs, pseudocode, annotations, and live Hopper MCP sessions. Trigger when the user asks for reverse engineering, static binary analysis, macOS app binary inspection, Hopper automation, Hopper Python scripting, Hopper MCP setup, or evidence-backed reports from local executables.
 ---
 
 # Hopper Disassembler Analysis
 
-Use Hopper as the evidence source for local binary analysis. Prefer reproducible exports first, then focused MCP or GUI inspection for questions that need live navigation, pseudocode, annotations, or current cursor state.
+Use Hopper as the evidence source for local binary analysis. Prefer bounded, reproducible JSON snapshots first; use live MCP or GUI navigation only for focused questions that need the current Hopper document, pseudocode, annotations, or cursor state.
 
-## Workflow
+## Operating Rules
 
-1. Verify the target and scope.
-   - For `.app` bundles, resolve `Contents/MacOS/<CFBundleExecutable>`.
-   - For universal Mach-O binaries, prefer ARM64 on Apple Silicon unless the user asks for another slice.
-   - Keep installed apps, source trees, and fixtures read-only. Copy to `/tmp` before byte changes or produced executables.
+- Keep installed apps, source checkouts, and fixtures read-only.
+- Copy targets to `/tmp` before byte changes, produced executables, or write-back annotation experiments.
+- Use the host Hopper installation for read-only disassembly when Hopper is licensed only on the host.
+- Use a disposable VM/sandbox before running modified binaries or generated executables.
+- Treat Hopper pseudocode as a hypothesis until assembly, xrefs, imports, strings, or source corroborate it.
 
-2. Capture a bounded Hopper snapshot.
+## Quick Workflow
+
+1. Check the environment.
 
    ```bash
-   scripts/run_hopper_export.sh --output /tmp/target.hopper-snapshot.json /path/to/Target.app
+   command -v hopper
+   command -v HopperMCPServer || true
+   /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+     "/Applications/Hopper Disassembler.app/Contents/Info.plist"
+   scripts/hopper_mcp_probe.py --json --call-tool none
    ```
 
-   Use focused options when needed:
+2. Resolve the target.
+
+   For `.app` bundles, analyze the main executable first:
+
+   ```bash
+   app="/Applications/Target.app"
+   exe="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")"
+   target="$app/Contents/MacOS/$exe"
+   file "$target"
+   ```
+
+   For universal Mach-O files, prefer the native ARM slice on Apple Silicon. Hopper 6 may expose modern system tools as `arm64e`; the wrapper handles that automatically, and `--arch arm64e` is available when explicit selection is needed.
+
+3. Capture a bounded snapshot.
+
+   ```bash
+   scripts/run_hopper_export.sh \
+     --output /tmp/target.hopper-snapshot.json \
+     /path/to/Target.app
+   ```
+
+   Focus the export when the binary is large:
 
    ```bash
    scripts/run_hopper_export.sh \
      --arch arm64 \
      --max-procedures 1000 \
      --max-strings 5000 \
+     --max-names 8000 \
      --output /tmp/target.arm64.hopper-snapshot.json \
-     /path/to/Target.app
+     /path/to/target
    ```
 
-   Add `--include-pseudocode --max-procedures 50` only for focused decompiler review.
+   Include pseudocode only for a small function set:
 
-3. Inspect the exported JSON before making claims.
-   - Start with `document`, `counts`, `truncated`, `segments`, `names`, and `strings`.
-   - Triage procedures by address, name, signature, callers, callees, basic blocks, sampled instructions, comments, and tags.
-   - If `document.background_analysis_active` or any `truncated` flag is true, disclose the limit and rerun with higher caps when the missing evidence matters.
+   ```bash
+   scripts/run_hopper_export.sh \
+     --include-pseudocode \
+     --max-procedures 50 \
+     --output /tmp/target.focused-pseudo.hopper-snapshot.json \
+     /path/to/target
+   ```
 
-4. Use Hopper MCP for live document queries.
+4. Read the snapshot before making claims.
+
+   ```bash
+   python3 - <<'PY' /tmp/target.hopper-snapshot.json
+   import json, sys
+   data = json.load(open(sys.argv[1], encoding="utf-8"))
+   print(data["document"])
+   print(data["counts"])
+   print(data["truncated"])
+   for proc in data["procedures"][:10]:
+       print(proc["address"], proc["name"], proc["signature"])
+   PY
+   ```
+
+   Inspect `document`, `counts`, `truncated`, `segments`, `names`, `strings`, and `procedures`. If `document.background_analysis_active` or a `truncated` flag matters to the question, rerun with higher caps or a narrower target.
+
+5. Corroborate with source and platform metadata.
+
+   ```bash
+   codesign -dv --verbose=4 "$target" 2>&1
+   otool -L "$target"
+   strings -a "$target" | grep -E "http|keychain|token|license|login|xpc|socket" | head
+   grep -R --line-number "StringOrSymbolFromHopper" /path/to/source
+   ```
+
+6. Use Hopper MCP for live document queries.
 
    ```bash
    scripts/hopper_mcp_probe.py --json --call-tool list_documents
    scripts/install_codex_hopper_mcp.sh --replace
    ```
 
-   Use MCP read tools for live documents (`list_procedures`, `procedure_info`, `procedure_assembly`, `procedure_pseudo_code`, `xrefs`, `search_strings`). Use write/navigation tools only when the user explicitly asks for live Hopper document edits.
+   Prefer read tools such as `list_procedures`, `procedure_info`, `procedure_assembly`, `procedure_pseudo_code`, `xrefs`, and `search_strings`. Use write/navigation tools only when the user explicitly asks for live Hopper document edits.
 
-5. Corroborate with local evidence.
-   - Combine Hopper addresses, strings, xrefs, imports, and sampled assembly.
-   - If source is available, map Hopper names/selectors/strings back to source files.
-   - Treat pseudocode as a hypothesis until assembly, xrefs, strings, imports, or source support it.
+7. Report with reproducibility.
 
-6. Report with reproducibility.
-   - Use `assets/hopper-analysis-report-template.md` for larger reports.
-   - Cite concrete addresses, names, strings, xrefs, source paths, and exact export commands.
-   - State caps, timeouts, architecture slice, Hopper version, and any unresolved evidence gaps.
+   Use `assets/hopper-analysis-report-template.md` for larger reports. Include exact export commands, Hopper version, architecture slice, caps, timeout, snapshot path, addresses, names, strings, xrefs, and unresolved evidence gaps.
 
-## Scripts
+## Bundled Scripts
 
-- `scripts/run_hopper_export.sh`: Open a binary or `.app` in Hopper, run the bundled exporter, wait for JSON, and close the throwaway document by default.
-- `scripts/hopper_export_snapshot.py`: Hopper Python script used by the wrapper. It exports document metadata, segments, sections, strings, names, procedures, call refs, basic blocks, and sampled instructions.
-- `scripts/hopper_mcp_probe.py`: Probe Hopper's bundled JSON-lines MCP server and list tools.
+- `scripts/install_codex_skill.sh`: Copy this skill folder into a Codex CLI skills directory.
+- `scripts/run_hopper_export.sh`: Open a binary or `.app` in Hopper, run the bundled exporter, wait for JSON, and close the throwaway Hopper document by default.
+- `scripts/hopper_export_snapshot.py`: Hopper Python script used by the wrapper. It exports metadata, segments, sections, strings, names, procedures, call refs, basic blocks, sampled instructions, comments, tags, and optional pseudocode.
+- `scripts/hopper_mcp_probe.py`: Probe Hopper's JSON-lines MCP server and list tools.
 - `scripts/install_codex_hopper_mcp.sh`: Register Hopper MCP with Codex CLI after probing the server.
 
-## Assets
+## Bundled Assets
 
 - `assets/codex-mcp-hopper.toml`: Codex MCP config snippet.
 - `assets/generic-mcp-hopper.json`: Generic MCP client config snippet.
@@ -75,6 +127,6 @@ Use Hopper as the evidence source for local binary analysis. Prefer reproducible
 
 Load only the reference needed for the current task:
 
-- `references/hopper-automation.md`: CLI launcher, AppleScript, MCP setup, tool surface, troubleshooting.
-- `references/hopper-python-api.md`: Public Hopper Python API patterns for custom scripts, xrefs, annotations, and pseudocode discipline.
+- `references/hopper-automation.md`: Hopper CLI launcher, universal-slice selection, MCP setup, tool surface, and troubleshooting.
+- `references/hopper-python-api.md`: Hopper Python API patterns, custom script templates, xrefs, annotations, and pseudocode discipline.
 - `references/macos-binary-workflow.md`: macOS app bundle analysis, source correlation, triage, and modification boundaries.

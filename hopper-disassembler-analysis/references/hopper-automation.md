@@ -2,6 +2,15 @@
 
 Use this reference when the task needs command-line Hopper runs, MCP setup, or repeatable evidence capture.
 
+## Contents
+
+- [Quick Environment Checks](#quick-environment-checks)
+- [Batch Snapshot Export](#batch-snapshot-export)
+- [Direct Hopper CLI](#direct-hopper-cli)
+- [AppleScript Automation](#applescript-automation)
+- [Official Hopper MCP Server](#official-hopper-mcp-server)
+- [Troubleshooting](#troubleshooting)
+
 ## Quick Environment Checks
 
 ```bash
@@ -11,7 +20,7 @@ command -v HopperMCPServer
 scripts/hopper_mcp_probe.py --json --call-tool none
 ```
 
-Expected local paths on a standard install:
+Expected paths on a standard macOS install:
 
 - Hopper app: `/Applications/Hopper Disassembler.app`
 - Hopper CLI launcher: `/usr/local/bin/hopper`
@@ -20,7 +29,7 @@ Expected local paths on a standard install:
 
 ## Batch Snapshot Export
 
-Prefer the bundled wrapper for first-pass evidence because it sets safe caps, handles `.app` bundles, chooses the ARM64 slice from universal Mach-O inputs, runs Hopper's Python exporter, waits for the JSON artifact, and closes the throwaway Hopper document by default.
+Prefer the bundled wrapper for first-pass evidence because it sets safe caps, handles `.app` bundles, chooses a native ARM slice from universal Mach-O inputs, runs Hopper's Python exporter with Hopper's injected API globals intact, waits for the JSON artifact, and closes the throwaway Hopper document by default.
 
 ```bash
 scripts/run_hopper_export.sh --output /tmp/target.hopper-snapshot.json /path/to/Target.app
@@ -38,6 +47,12 @@ scripts/run_hopper_export.sh \
   /path/to/Target.app
 
 scripts/run_hopper_export.sh \
+  --arch arm64e \
+  --max-procedures 1000 \
+  --output /tmp/system-tool.arm64e.hopper-snapshot.json \
+  /bin/echo
+
+scripts/run_hopper_export.sh \
   --include-pseudocode \
   --max-procedures 50 \
   --output /tmp/target.pseudo.hopper-snapshot.json \
@@ -48,6 +63,12 @@ Use `--include-pseudocode` only for focused exports. Hopper decompilation can be
 
 Use `--keep-open` when the user wants the Hopper GUI left open for interactive inspection after the export.
 
+Implementation notes for future maintenance:
+
+- Hopper 6.2.9 presents some Apple system universal binaries as `AArch64e` in the FAT picker. The wrapper uses `-l FAT -s AArch64e -l Mach-O` for `arm64e` instead of relying on `--aarch64`.
+- Hopper injects `Document`, `Segment`, and related API classes into the script's global namespace. Wrapper scripts that dispatch to another Python file must preserve `globals()`; running the exporter through `runpy.run_path()` loses those injected classes.
+- The wrapper writes the generated dispatch script to the process temp directory and removes it after the export completes.
+
 ## Direct Hopper CLI
 
 Hopper's launcher accepts loader chains and script execution:
@@ -55,6 +76,7 @@ Hopper's launcher accepts loader chains and script execution:
 ```bash
 hopper -l Mach-O -e /path/to/binary -Y /path/to/script.py
 hopper -l FAT --aarch64 -l Mach-O -e /path/to/universal-binary -Y /path/to/script.py
+hopper -l FAT -s AArch64e -l Mach-O -e /path/to/arm64e-universal-binary -Y /path/to/script.py
 ```
 
 Important flags:
@@ -65,10 +87,11 @@ Important flags:
 - `-y` / `--python-command`: execute a Python command after initial analysis.
 - `-a`, `-o`, `-f`, `-z`: enable analysis, Objective-C metadata, Swift metadata, and exception metadata.
 - `-l FAT --aarch64 -l Mach-O`: select the ARM64 Mach-O slice from a universal binary.
+- `-l FAT -s AArch64e -l Mach-O`: select the ARM64e Mach-O slice when the FAT loader names it `AArch64e`.
 
 ## AppleScript Automation
 
-Use AppleScript when a workflow needs Hopper's scripting dictionary directly.
+Use AppleScript when a workflow needs Hopper's scripting dictionary directly. Prefer `scripts/run_hopper_export.sh` for batch exports because AppleScript can return before an artifact exists and universal binaries can still surface loader option dialogs.
 
 ```bash
 osascript <<'APPLESCRIPT'
@@ -121,7 +144,8 @@ Use read tools freely. Use write/navigation tools only when the user explicitly 
 ## Troubleshooting
 
 - **No export file:** check the wrapper log path printed by `run_hopper_export.sh`; increase `--timeout`.
-- **Architecture picker or empty export:** rerun with `--arch arm64` or `--arch x86_64` for universal Mach-O binaries.
+- **FAT archive picker appears:** rerun with `--arch arm64e`, `--arch arm64`, or `--arch x86_64` based on `file /path/to/binary`. Hopper's picker may show `AArch64e` for Apple system binaries.
+- **Empty export with an exporter error log:** inspect `<snapshot>.error.log`; a custom wrapper may have lost Hopper's injected `Document` global.
 - **MCP server path with spaces:** use `/usr/local/bin/HopperMCPServer` or the generic JSON asset that points to the symlink.
 - **Automation prompt blocked the run:** open System Settings and allow the terminal or agent host to automate Hopper.
 - **Stale documents in Hopper:** close them manually or rerun the wrapper without `--keep-open`.
