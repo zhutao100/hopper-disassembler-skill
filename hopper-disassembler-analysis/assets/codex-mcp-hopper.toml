@@ -1,0 +1,3 @@
+[mcp_servers.hopper]
+command = "/usr/local/bin/HopperMCPServer"
+args = []

@@ -1,0 +1,170 @@
+# Hopper Python API Patterns
+
+Use this reference when writing or modifying scripts that run inside Hopper.
+
+## Document Model
+
+Hopper scripts start from the active `Document`.
+
+```python
+document = Document.getCurrentDocument()
+if document is None:
+    print("No active Hopper document.")
+    raise SystemExit(1)
+```
+
+The public model is:
+
+- `Document`: global file/database state, segments, current cursor, tags, bookmarks, names, reads, writes.
+- `Segment`: mapped address range, sections, typed bytes, strings, labels, instructions, references.
+- `Section`: named subrange inside a segment.
+- `Procedure`: function entry, basic blocks, locals, tags, callers, callees, pseudocode.
+- `BasicBlock`: start/end addresses and successor edges.
+- `Instruction`: architecture, mnemonic, raw/formatted arguments, length, jump classification.
+
+## Avoid Main-Thread Deadlocks
+
+`waitForBackgroundProcessToEnd()` can deadlock in some batch-script contexts because it dispatches to the main thread while Python holds the interpreter lock. For batch exports, prefer one of these:
+
+```python
+if document.backgroundProcessActive():
+    document.log("Background analysis still active; export may be incomplete.")
+```
+
+or launch with Hopper's `-Y` option, which runs after initial analysis:
+
+```bash
+hopper -a -o -f -z -l Mach-O -e /path/to/binary -Y /path/to/script.py
+```
+
+Use blocking waits only in a known interactive script where the UI remains responsive.
+
+## Enumerate Segments and Sections
+
+```python
+for segment in document.getSegmentsList():
+    print(segment.getName(), hex(segment.getStartingAddress()), segment.getLength())
+    for section in segment.getSectionsList():
+        print("  ", section.getName(), hex(section.getStartingAddress()), section.getLength())
+```
+
+Useful methods:
+
+- `segment.getFileOffset()`
+- `segment.getFileOffsetForAddress(addr)`
+- `segment.getSectionAtAddress(addr)`
+- `segment.getTypeAtAddress(addr)`
+- `Segment.stringForType(type_value)`
+
+## Enumerate Procedures
+
+Prefer segment-based enumeration; it stays on the public API.
+
+```python
+def iter_procedures(document):
+    for segment in document.getSegmentsList():
+        for index in range(segment.getProcedureCount()):
+            procedure = segment.getProcedureAtIndex(index)
+            if procedure is not None:
+                yield segment, procedure
+
+
+for segment, procedure in iter_procedures(document):
+    entry = procedure.getEntryPoint()
+    name = segment.getNameAtAddress(entry) or hex(entry)
+    print(name, procedure.signatureString())
+```
+
+Procedure detail methods:
+
+- `procedure.getEntryPoint()`
+- `procedure.signatureString()`
+- `procedure.getHeapSize()`
+- `procedure.getLocalVariableList()`
+- `procedure.getBasicBlockCount()`
+- `procedure.getAllCallers()`
+- `procedure.getAllCallees()`
+- `procedure.decompile()`
+
+Call references expose `fromAddress()`, `toAddress()`, and `type()`.
+
+## Walk Basic Blocks and Instructions
+
+```python
+for block_index in range(procedure.getBasicBlockCount()):
+    block = procedure.getBasicBlock(block_index)
+    start = block.getStartingAddress()
+    end = block.getEndingAddress()
+    successors = [
+        block.getSuccessorAddressAtIndex(i)
+        for i in range(block.getSuccessorCount())
+    ]
+
+    cursor = start
+    while cursor < end:
+        instruction = segment.getInstructionAtAddress(cursor)
+        if instruction is None:
+            cursor += 1
+            continue
+        print(hex(cursor), instruction.getInstructionString())
+        cursor += max(1, instruction.getInstructionLength())
+```
+
+For each instruction, capture both `getRawArgument(i)` and `getFormattedArgument(i)` when operand interpretation matters.
+
+## Strings and Names
+
+```python
+for segment in document.getSegmentsList():
+    for value, address in segment.getStringsList():
+        print(hex(address), value)
+
+    labels = segment.getLabelsList()
+    addresses = segment.getNamedAddresses()
+    for label, address in zip(labels, addresses):
+        print(hex(address), label, segment.getDemangledNameAtAddress(address))
+```
+
+For global lookup:
+
+```python
+address = document.getAddressForName("_main")
+name = document.getNameAtAddress(address)
+```
+
+## Cross-References
+
+```python
+segment = document.getSegmentAtAddress(address)
+refs_to = segment.getReferencesOfAddress(address)
+refs_from = segment.getReferencesFromAddress(address)
+```
+
+Corroborate a reference with instruction text and the containing procedure before drawing conclusions.
+
+## Comments, Labels, Tags, and Bookmarks
+
+Use conservative write-back. A wrong label can mislead later analysis.
+
+```python
+segment.setNameAtAddress(address, "reviewed_function")
+segment.setCommentAtAddress(address, "Prefix comment")
+segment.setInlineCommentAtAddress(address, "Inline comment")
+
+tag = document.getTagWithName("review")
+if tag is None:
+    tag = document.buildTag("review")
+document.addTagAtAddress(tag, address)
+document.setBookmarkName(address, "analysis checkpoint")
+```
+
+Prefer batch review in JSON first. `assets/hopper-annotation-payload-template.json` is a starting point for annotation payloads.
+
+## Pseudocode Discipline
+
+`procedure.decompile()` is useful for summaries but is not ground truth. When reporting behavior:
+
+1. Cite procedure address and name.
+2. Check assembly and xrefs for the same claim.
+3. Check strings/imports and, when available, source code.
+4. Mark pseudocode-only conclusions as hypotheses.

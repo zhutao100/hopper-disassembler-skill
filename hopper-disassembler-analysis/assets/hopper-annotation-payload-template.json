@@ -1,0 +1,26 @@
+{
+  "labels": [
+    {
+      "address": "0x100000000",
+      "name": "reviewed_entry_point"
+    }
+  ],
+  "comments": [
+    {
+      "address": "0x100000000",
+      "comment": "Prefix comment for a reviewed address."
+    }
+  ],
+  "inline_comments": [
+    {
+      "address": "0x100000004",
+      "comment": "Inline comment for a specific instruction."
+    }
+  ],
+  "bookmarks": [
+    {
+      "address": "0x100000000",
+      "name": "analysis checkpoint"
+    }
+  ]
+}

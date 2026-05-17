@@ -1,2 +1,5 @@
 test-data/
 reference-checkout/
+.DS_Store
+__pycache__/
+*.py[cod]

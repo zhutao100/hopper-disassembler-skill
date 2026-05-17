@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "hopper": {
+      "command": "/usr/local/bin/HopperMCPServer",
+      "args": [],
+      "env": {}
+    }
+  }
+}
