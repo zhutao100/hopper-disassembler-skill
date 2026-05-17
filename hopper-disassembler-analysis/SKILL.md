@@ -40,6 +40,8 @@ Use Hopper as the evidence source for local binary analysis. Prefer bounded, rep
 
    For universal Mach-O files, prefer the native ARM slice on Apple Silicon. Hopper 6 may expose modern system tools as `arm64e`; the wrapper handles that automatically, and `--arch arm64e` is available when explicit selection is needed.
 
+   If the source snippet lives in an embedded framework, helper app, XPC service, or plugin, analyze that Mach-O instead of forcing all evidence through the main executable.
+
 3. Capture a bounded snapshot.
 
    ```bash
@@ -95,14 +97,18 @@ Use Hopper as the evidence source for local binary analysis. Prefer bounded, rep
    grep -R --line-number "StringOrSymbolFromHopper" /path/to/source
    ```
 
+   With source available, pick a small snippet and verify it through at least two Hopper signals: a demangled name or selector, a string plus xrefs, callee/import evidence, basic-block/branch structure, or focused pseudocode. For Swift binaries, search demangled names and remember that short string literals may be encoded as immediate values rather than exported strings.
+
 6. Use Hopper MCP for live document queries.
 
    ```bash
    scripts/hopper_mcp_probe.py --json --call-tool list_documents
+   scripts/hopper_mcp_probe.py --json --call-tool search_name --tool-args '{"pattern":"parseBytes"}'
+   scripts/hopper_mcp_probe.py --json --call-tool procedure_info --tool-args '{"procedure":"0x100003f50"}'
    scripts/install_codex_hopper_mcp.sh --replace
    ```
 
-   Prefer read tools such as `list_procedures`, `procedure_info`, `procedure_assembly`, `procedure_pseudo_code`, `xrefs`, and `search_strings`. Use write/navigation tools only when the user explicitly asks for live Hopper document edits.
+   Prefer read tools such as `list_procedures`, `procedure_info`, `procedure_assembly`, `procedure_pseudo_code`, `xrefs`, and `search_strings`. Official procedure tools use the `procedure` argument for either a name or address; `xrefs` uses `address`. Use write/navigation tools only when the user explicitly asks for live Hopper document edits.
 
 7. Report with reproducibility.
 
@@ -112,8 +118,8 @@ Use Hopper as the evidence source for local binary analysis. Prefer bounded, rep
 
 - `scripts/install_codex_skill.sh`: Copy this skill folder into a Codex CLI skills directory.
 - `scripts/run_hopper_export.sh`: Open a binary or `.app` in Hopper, run the bundled exporter, wait for JSON, and close the throwaway Hopper document by default.
-- `scripts/hopper_export_snapshot.py`: Hopper Python script used by the wrapper. It exports metadata, segments, sections, strings, names, procedures, call refs, basic blocks, sampled instructions, comments, tags, and optional pseudocode.
-- `scripts/hopper_mcp_probe.py`: Probe Hopper's JSON-lines MCP server and list tools.
+- `scripts/hopper_export_snapshot.py`: Hopper Python script used by the wrapper. It exports metadata, segments, sections, strings with bounded xrefs, names, procedures, call refs, basic blocks, sampled instructions, comments, tags, and optional pseudocode.
+- `scripts/hopper_mcp_probe.py`: Probe Hopper's JSON-lines MCP server, list tools, inspect schemas, and call read tools with JSON arguments.
 - `scripts/install_codex_hopper_mcp.sh`: Register Hopper MCP with Codex CLI after probing the server.
 
 ## Bundled Assets
@@ -129,4 +135,4 @@ Load only the reference needed for the current task:
 
 - `references/hopper-automation.md`: Hopper CLI launcher, universal-slice selection, MCP setup, tool surface, and troubleshooting.
 - `references/hopper-python-api.md`: Hopper Python API patterns, custom script templates, xrefs, annotations, and pseudocode discipline.
-- `references/macos-binary-workflow.md`: macOS app bundle analysis, source correlation, triage, and modification boundaries.
+- `references/macos-binary-workflow.md`: macOS app bundle analysis, source correlation, Swift gotchas, triage, and modification boundaries.

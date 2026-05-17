@@ -31,6 +31,7 @@ Useful scripts:
 hopper-disassembler-analysis/scripts/install_codex_skill.sh --replace
 hopper-disassembler-analysis/scripts/run_hopper_export.sh --output /tmp/target.hopper-snapshot.json /path/to/Target.app
 hopper-disassembler-analysis/scripts/hopper_mcp_probe.py --json --call-tool none
+hopper-disassembler-analysis/scripts/hopper_mcp_probe.py --json --call-tool search_name --tool-args '{"pattern":"main"}'
 hopper-disassembler-analysis/scripts/install_codex_hopper_mcp.sh --replace
 ```
 
@@ -63,7 +64,7 @@ hopper-disassembler-analysis/scripts/install_codex_hopper_mcp.sh --replace
 python3 "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" hopper-disassembler-analysis
 python3 -m py_compile hopper-disassembler-analysis/scripts/hopper_mcp_probe.py hopper-disassembler-analysis/scripts/hopper_export_snapshot.py
 hopper-disassembler-analysis/scripts/hopper_mcp_probe.py --json --call-tool none
-hopper-disassembler-analysis/scripts/run_hopper_export.sh --timeout 180 --max-procedures 5 --max-strings 10 --output /tmp/echo.hopper-snapshot.json /bin/echo
+hopper-disassembler-analysis/scripts/run_hopper_export.sh --timeout 180 --max-procedures 5 --max-strings 10 --max-string-xrefs 4 --output /tmp/echo.hopper-snapshot.json /bin/echo
 ```
 
 Write generated snapshots to `/tmp` unless a task explicitly asks for persistent artifacts.

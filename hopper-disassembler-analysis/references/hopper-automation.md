@@ -43,6 +43,7 @@ scripts/run_hopper_export.sh \
   --arch arm64 \
   --max-procedures 1000 \
   --max-strings 5000 \
+  --max-string-xrefs 32 \
   --output /tmp/target.hopper-snapshot.json \
   /path/to/Target.app
 
@@ -68,6 +69,7 @@ Implementation notes for future maintenance:
 - Hopper 6.2.9 presents some Apple system universal binaries as `AArch64e` in the FAT picker. The wrapper uses `-l FAT -s AArch64e -l Mach-O` for `arm64e` instead of relying on `--aarch64`.
 - Hopper injects `Document`, `Segment`, and related API classes into the script's global namespace. Wrapper scripts that dispatch to another Python file must preserve `globals()`; running the exporter through `runpy.run_path()` loses those injected classes.
 - The wrapper writes the generated dispatch script to the process temp directory and removes it after the export completes.
+- String rows include bounded `xrefs_to` entries. Use `--max-string-xrefs 0` to suppress this when a target has many string references, or increase it when string-to-code correlation is the main task.
 
 ## Direct Hopper CLI
 
@@ -120,6 +122,9 @@ Hopper 6 exposes a stdio JSON-lines MCP server. Probe it before relying on it:
 ```bash
 scripts/hopper_mcp_probe.py
 scripts/hopper_mcp_probe.py --json --call-tool list_documents
+scripts/hopper_mcp_probe.py --json --call-tool search_strings --tool-args '{"pattern":"license|trial"}'
+scripts/hopper_mcp_probe.py --json --call-tool procedure_assembly --tool-args '{"procedure":"0x100003f50"}'
+scripts/hopper_mcp_probe.py --json --include-tool-schemas --call-tool none
 ```
 
 Install it for Codex CLI:
@@ -140,6 +145,13 @@ Observed official tool surface:
 - Annotations: `comment`, `inline_comment`, `set_comment`, `set_inline_comment`, `address_name`, `set_address_name`, `set_addresses_names`, `list_bookmarks`, `set_bookmark`, `unset_bookmark`
 
 Use read tools freely. Use write/navigation tools only when the user explicitly asks for live Hopper document edits and you can describe exactly what will change.
+
+Tool argument gotchas:
+
+- Procedure tools take `{"procedure":"name-or-0xaddress"}`. Passing `{"address":"0x..."}` is ignored by official procedure tools and can accidentally query the current procedure.
+- `xrefs` and `goto_address` take `{"address":"0x..."}`.
+- `search_strings`, `search_procedures`, and `search_name` take a regular-expression `pattern` plus optional `case_sensitive`.
+- `hopper_mcp_probe.py` blocks navigation/write tools unless `--allow-state-change` is supplied.
 
 ## Troubleshooting
 

@@ -13,6 +13,33 @@ from typing import Any
 
 DEFAULT_SERVER = "/usr/local/bin/HopperMCPServer"
 PROTOCOL_VERSION = "2025-03-26"
+READ_ONLY_TOOLS = {
+    "list_documents",
+    "current_document",
+    "set_current_document",
+    "list_segments",
+    "list_procedures",
+    "list_procedure_size",
+    "list_procedure_info",
+    "list_strings",
+    "search_strings",
+    "search_procedures",
+    "procedure_info",
+    "procedure_address",
+    "current_address",
+    "current_procedure",
+    "procedure_assembly",
+    "procedure_pseudo_code",
+    "procedure_callers",
+    "procedure_callees",
+    "xrefs",
+    "comment",
+    "inline_comment",
+    "list_names",
+    "search_name",
+    "address_name",
+    "list_bookmarks",
+}
 
 
 class JsonLineMCP:
@@ -93,11 +120,42 @@ def parse_args() -> argparse.Namespace:
         default="list_documents",
         help="optional read-only tool to call after tools/list; use 'none' to skip",
     )
+    parser.add_argument(
+        "--tool-args",
+        default="{}",
+        help="JSON object passed as the MCP tool arguments. Default: {}",
+    )
+    parser.add_argument(
+        "--include-tool-schemas",
+        action="store_true",
+        help="include full tool schema records in --json output",
+    )
+    parser.add_argument(
+        "--allow-state-change",
+        action="store_true",
+        help="allow navigation or write tools such as goto_address and set_comment",
+    )
     return parser.parse_args()
+
+
+def parse_tool_args(value: str) -> dict[str, Any]:
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"--tool-args must be valid JSON: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("--tool-args must decode to a JSON object")
+    return parsed
 
 
 def main() -> int:
     args = parse_args()
+    try:
+        tool_args = parse_tool_args(args.tool_args)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
     server = Path(args.server)
     if not server.exists():
         print(f"error: Hopper MCP server not found: {server}", file=sys.stderr)
@@ -126,15 +184,25 @@ def main() -> int:
             "tool_count": len(tool_names),
             "tools": tool_names,
         }
+        if args.include_tool_schemas:
+            payload["tool_schemas"] = tools.get("tools", [])
         if args.call_tool != "none":
             if args.call_tool not in tool_names:
                 print(f"error: tool is not exposed by server: {args.call_tool}", file=sys.stderr)
                 return 3
+            if args.call_tool not in READ_ONLY_TOOLS and not args.allow_state_change:
+                print(
+                    "error: refusing to call navigation/write tool without --allow-state-change: "
+                    f"{args.call_tool}",
+                    file=sys.stderr,
+                )
+                return 4
             call_result = client.request(
                 "tools/call",
-                {"name": args.call_tool, "arguments": {}},
+                {"name": args.call_tool, "arguments": tool_args},
             )
             payload["call_tool"] = args.call_tool
+            payload["call_args"] = tool_args
             payload["call_result"] = decode_tool_result(call_result)
 
     if args.json:
@@ -148,7 +216,10 @@ def main() -> int:
         )
         print(f"tools ({payload['tool_count']}): {', '.join(payload['tools'])}")
         if "call_tool" in payload:
-            print(f"{payload['call_tool']}: {json.dumps(payload['call_result'], sort_keys=True)}")
+            print(
+                f"{payload['call_tool']} {json.dumps(payload['call_args'], sort_keys=True)}: "
+                f"{json.dumps(payload['call_result'], sort_keys=True)}"
+            )
     return 0
 
 

@@ -201,6 +201,17 @@ refs_from = segment.getReferencesFromAddress(address)
 
 Corroborate a reference with instruction text and the containing procedure before drawing conclusions.
 
+For string-driven triage, map each reference back to its owning procedure:
+
+```python
+for ref in segment.getReferencesOfAddress(string_address):
+    ref_segment = document.getSegmentAtAddress(ref)
+    procedure = ref_segment.getProcedureAtAddress(ref) if ref_segment else None
+    if procedure:
+        entry = procedure.getEntryPoint()
+        print(hex(ref), hex(entry), document.getNameAtAddress(entry))
+```
+
 ## Comments, Labels, Tags, and Bookmarks
 
 Use conservative write-back. A wrong label can mislead later analysis.

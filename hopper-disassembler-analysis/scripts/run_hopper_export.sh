@@ -16,6 +16,7 @@ Options:
       --max-procedures N        Procedure cap. Default: 500
       --max-strings N           String cap. Default: 2000
       --max-names N             Named-address cap. Default: 3000
+      --max-string-xrefs N      Xrefs per string cap. Default: 16
       --full                    Remove procedure/string/name caps.
       --include-pseudocode      Include limited pseudocode. Slower; disabled by default.
       --keep-open               Leave the Hopper document open after export.
@@ -60,6 +61,7 @@ output=""
 max_procedures=500
 max_strings=2000
 max_names=3000
+max_string_xrefs=16
 full_export=0
 include_pseudocode=0
 close_after_export=1
@@ -92,6 +94,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --max-names)
             max_names="$2"
+            shift 2
+            ;;
+        --max-string-xrefs)
+            max_string_xrefs="$2"
             shift 2
             ;;
         --full)
@@ -185,7 +191,7 @@ runner_path="${TMPDIR:-/tmp}/hopper-disassembler-analysis-${$}.py"
 rm -f "${log_path}"
 rm -f "${runner_path}"
 
-python3 - "${runner_path}" "${exporter}" "${output}" "${max_procedures}" "${max_strings}" "${max_names}" "${full_export}" "${include_pseudocode}" "${close_after_export}" <<'PY'
+python3 - "${runner_path}" "${exporter}" "${output}" "${max_procedures}" "${max_strings}" "${max_names}" "${max_string_xrefs}" "${full_export}" "${include_pseudocode}" "${close_after_export}" <<'PY'
 from __future__ import annotations
 
 import sys
@@ -196,6 +202,7 @@ keys = [
     "HOPPER_SKILL_MAX_PROCEDURES",
     "HOPPER_SKILL_MAX_STRINGS",
     "HOPPER_SKILL_MAX_NAMES",
+    "HOPPER_SKILL_MAX_STRING_XREFS",
     "HOPPER_SKILL_FULL_EXPORT",
     "HOPPER_SKILL_INCLUDE_PSEUDOCODE",
     "HOPPER_SKILL_CLOSE_AFTER_EXPORT",

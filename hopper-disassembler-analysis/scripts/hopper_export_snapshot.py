@@ -110,6 +110,44 @@ def call_refs(document: Any, procedure: Any, direction: str, max_refs: int) -> l
     return result
 
 
+def containing_procedure(document: Any, address: Any) -> dict[str, Any]:
+    segment = safe_call(None, document.getSegmentAtAddress, address)
+    if segment is None:
+        return {}
+    procedure = safe_call(None, segment.getProcedureAtAddress, address)
+    if procedure is None:
+        return {}
+
+    entry = safe_call(None, procedure.getEntryPoint)
+    return {
+        "procedure": to_hex(entry),
+        "procedure_name": safe_text(safe_call("", segment.getNameAtAddress, entry)),
+        "procedure_demangled": safe_text(safe_call("", segment.getDemangledNameAtAddress, entry)),
+    }
+
+
+def xrefs_to_address(
+    document: Any, address: Any, max_refs: int
+) -> tuple[list[dict[str, Any]], bool]:
+    if max_refs == 0:
+        return [], False
+
+    segment = safe_call(None, document.getSegmentAtAddress, address)
+    if segment is None:
+        return [], False
+
+    refs = safe_call([], segment.getReferencesOfAddress, address) or []
+    rows: list[dict[str, Any]] = []
+    for ref in refs[:max_refs]:
+        row = {
+            "from": to_hex(ref),
+            "from_name": safe_text(safe_call("", document.getNameAtAddress, ref)),
+        }
+        row.update(containing_procedure(document, ref))
+        rows.append(row)
+    return rows, len(refs) > max_refs
+
+
 def instruction_rows(
     segment: Any, start: Any, end: Any, max_instructions: int
 ) -> list[dict[str, Any]]:
@@ -224,7 +262,7 @@ def collect_segments(document: Any) -> list[dict[str, Any]]:
 
 
 def collect_strings(
-    document: Any, max_strings: int, max_string_length: int
+    document: Any, max_strings: int, max_string_length: int, max_xrefs: int
 ) -> tuple[list[dict[str, Any]], bool]:
     rows: list[dict[str, Any]] = []
     truncated = False
@@ -235,12 +273,15 @@ def collect_strings(
                 truncated = True
                 return rows, truncated
             text = safe_text(value)
+            xrefs, xrefs_truncated = xrefs_to_address(document, address, max_xrefs)
             rows.append(
                 {
                     "address": to_hex(address),
                     "segment": segment_name,
                     "value": truncate(text, max_string_length),
                     "truncated_value": max_string_length > 0 and len(text) > max_string_length,
+                    "xrefs_to": xrefs,
+                    "xrefs_truncated": xrefs_truncated,
                 }
             )
     return rows, truncated
@@ -344,6 +385,7 @@ def collect_snapshot(document: Any) -> dict[str, Any]:
         "max_basic_blocks": env_int("HOPPER_SKILL_MAX_BASIC_BLOCKS", 64),
         "max_instructions_per_block": env_int("HOPPER_SKILL_MAX_INSTRUCTIONS_PER_BLOCK", 8),
         "max_call_refs": env_int("HOPPER_SKILL_MAX_CALL_REFS", 64),
+        "max_string_xrefs": env_int("HOPPER_SKILL_MAX_STRING_XREFS", 16),
         "max_string_length": env_int("HOPPER_SKILL_MAX_STRING_LENGTH", 4096),
         "include_pseudocode": env_flag("HOPPER_SKILL_INCLUDE_PSEUDOCODE", False),
         "max_pseudocode_functions": env_int("HOPPER_SKILL_MAX_PSEUDOCODE_FUNCTIONS", 20),
@@ -352,7 +394,10 @@ def collect_snapshot(document: Any) -> dict[str, Any]:
     background_active = bool(safe_call(False, document.backgroundProcessActive))
     segments = collect_segments(document)
     strings, strings_truncated = collect_strings(
-        document, int(config["max_strings"]), int(config["max_string_length"])
+        document,
+        int(config["max_strings"]),
+        int(config["max_string_length"]),
+        int(config["max_string_xrefs"]),
     )
     names, names_truncated = collect_names(document, int(config["max_names"]))
     procedures, total_procedures, procedures_truncated = collect_procedures(document, config)
