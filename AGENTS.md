@@ -20,8 +20,9 @@ Run these after script or skill metadata changes:
 
 ```bash
 python3 "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" hopper-disassembler-analysis
-python3 -m py_compile hopper-disassembler-analysis/scripts/hopper_export_snapshot.py hopper-disassembler-analysis/scripts/hopper_mcp_probe.py
+python3 -m py_compile hopper-disassembler-analysis/scripts/hopper_export_snapshot.py hopper-disassembler-analysis/scripts/hopper_mcp_probe.py hopper-disassembler-analysis/scripts/hopper_snapshot_summary.py
 bash -n hopper-disassembler-analysis/scripts/run_hopper_export.sh hopper-disassembler-analysis/scripts/install_codex_hopper_mcp.sh hopper-disassembler-analysis/scripts/install_codex_skill.sh
 hopper-disassembler-analysis/scripts/hopper_mcp_probe.py --json --call-tool none
-hopper-disassembler-analysis/scripts/run_hopper_export.sh --timeout 180 --procedure-pattern 'EntryPoint|sub_' --max-procedures 5 --max-basic-blocks 2 --max-strings 10 --max-string-xrefs 4 --output /tmp/echo.hopper-snapshot.json /bin/echo
+hopper-disassembler-analysis/scripts/run_hopper_export.sh --timeout 180 --procedure-pattern 'EntryPoint|sub_' --max-procedures 5 --max-basic-blocks 2 --max-strings 10 --max-string-xrefs 4 --summary-output /tmp/echo.hopper-summary.md --output /tmp/echo.hopper-snapshot.json /bin/echo
+hopper-disassembler-analysis/scripts/hopper_snapshot_summary.py --filter 'EntryPoint|sub_' /tmp/echo.hopper-snapshot.json >/tmp/echo.hopper-summary.check.md
 ```

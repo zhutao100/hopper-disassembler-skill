@@ -258,7 +258,7 @@ Use this only in a disposable copy or VM workflow, then verify file offsets and 
 
 ## Pseudocode Discipline
 
-`procedure.decompile()` is useful for summaries but is not ground truth. When reporting behavior:
+`procedure.decompile()` is useful for summaries but is not ground truth. Always cap serialized pseudocode; optimized Rust and Swift generic-heavy functions can produce megabytes from one `decompile()` call. When reporting behavior:
 
 1. Cite procedure address and name.
 2. Check assembly and xrefs for the same claim.

@@ -57,7 +57,10 @@ These outputs are not substitutes for Hopper evidence; they guide where to look.
 ## 3. Export Hopper Evidence
 
 ```bash
-scripts/run_hopper_export.sh --output /tmp/target.hopper-snapshot.json "$target"
+scripts/run_hopper_export.sh \
+  --summary-output /tmp/target.hopper-summary.md \
+  --output /tmp/target.hopper-snapshot.json \
+  "$target"
 ```
 
 For universal binaries on Apple Silicon, prefer ARM64:
@@ -77,7 +80,9 @@ For focused decompiler review:
 ```bash
 scripts/run_hopper_export.sh \
   --include-pseudocode \
+  --max-pseudocode-chars 12000 \
   --max-procedures 50 \
+  --summary-output /tmp/target.focused.hopper-summary.md \
   --output /tmp/target.focused.hopper-snapshot.json \
   "$target"
 ```
@@ -110,6 +115,15 @@ PY
 ```
 
 If the snapshot is capped, use it for triage only. Rerun with higher caps, focused pseudocode, or live MCP for claims about functions outside the exported range.
+
+For direct LLM review, use the compact summary with a source-aware filter:
+
+```bash
+scripts/hopper_snapshot_summary.py \
+  --filter 'FunctionOrType|UniqueString|0x100003f50' \
+  --output /tmp/target.hopper-summary.md \
+  /tmp/target.hopper-snapshot.json
+```
 
 ## 5. Correlate With Source When Available
 

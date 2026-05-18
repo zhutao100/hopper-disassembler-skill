@@ -53,6 +53,16 @@ Use Hopper as the evidence source for local binary analysis. Prefer bounded, rep
      /path/to/Target.app
    ```
 
+   Add a compact Markdown companion when an agent needs to ingest the result directly:
+
+   ```bash
+   scripts/run_hopper_export.sh \
+     --summary-output /tmp/target.hopper-summary.md \
+     --summary-filter 'SourceType|UniqueString|0x100003f50' \
+     --output /tmp/target.hopper-snapshot.json \
+     /path/to/Target.app
+   ```
+
    Focus the export when the binary is large:
 
    ```bash
@@ -70,6 +80,7 @@ Use Hopper as the evidence source for local binary analysis. Prefer bounded, rep
    ```bash
    scripts/run_hopper_export.sh \
      --include-pseudocode \
+     --max-pseudocode-chars 12000 \
      --procedure-pattern 'FunctionOrTypeName|0x100003f50' \
      --max-procedures 20 \
      --max-basic-blocks 32 \
@@ -91,7 +102,14 @@ Use Hopper as the evidence source for local binary analysis. Prefer bounded, rep
    PY
    ```
 
-   Inspect `document`, `counts`, `truncated`, `segments`, `names`, `strings`, and `procedures`. If `document.background_analysis_active` or a `truncated` flag matters to the question, rerun with higher caps or a narrower target.
+   Inspect `document`, `counts`, `truncated`, `segments`, `names`, `strings`, and `procedures`. If `document.background_analysis_active` or a `truncated` flag matters to the question, rerun with higher caps or a narrower target. For a bounded review surface, summarize an existing snapshot:
+
+   ```bash
+   scripts/hopper_snapshot_summary.py \
+     --filter 'FunctionOrTypeName|UniqueString|0x100003f50' \
+     --output /tmp/target.hopper-summary.md \
+     /tmp/target.hopper-snapshot.json
+   ```
 
 5. Corroborate with source and platform metadata.
 
@@ -125,8 +143,9 @@ Use Hopper as the evidence source for local binary analysis. Prefer bounded, rep
 ## Bundled Scripts
 
 - `scripts/install_codex_skill.sh`: Copy this skill folder into a Codex CLI skills directory.
-- `scripts/run_hopper_export.sh`: Open a binary or `.app` in Hopper, run the bundled exporter, wait for JSON, and close the throwaway Hopper document by default.
-- `scripts/hopper_export_snapshot.py`: Hopper Python script used by the wrapper. It exports metadata, segments, sections, strings with bounded xrefs, names, procedures, call refs, basic blocks, sampled instructions, comments, tags, file offsets, and optional pseudocode.
+- `scripts/run_hopper_export.sh`: Open a binary or `.app` in Hopper, run the bundled exporter, optionally write an LLM-oriented Markdown summary, wait for JSON, and close the throwaway Hopper document by default.
+- `scripts/hopper_export_snapshot.py`: Hopper Python script used by the wrapper. It exports metadata, segments, sections, strings with bounded xrefs, names, procedures, call refs, basic blocks, sampled instructions, comments, tags, file offsets, and bounded optional pseudocode.
+- `scripts/hopper_snapshot_summary.py`: Summarize a snapshot as compact Markdown or compact JSON, with optional regex filtering across procedure, name, string, and xref text.
 - `scripts/hopper_mcp_probe.py`: Probe Hopper's JSON-lines MCP server, list tools, inspect schemas, and call read tools with JSON arguments.
 - `scripts/install_codex_hopper_mcp.sh`: Register Hopper MCP with Codex CLI after probing the server.
 

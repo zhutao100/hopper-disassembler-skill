@@ -6,6 +6,7 @@ Use this reference when the task needs command-line Hopper runs, MCP setup, or r
 
 - [Quick Environment Checks](#quick-environment-checks)
 - [Batch Snapshot Export](#batch-snapshot-export)
+- [Compact Snapshot Summaries](#compact-snapshot-summaries)
 - [Direct Hopper CLI](#direct-hopper-cli)
 - [Focused Procedure Exports](#focused-procedure-exports)
 - [AppleScript Automation](#applescript-automation)
@@ -33,7 +34,10 @@ Expected paths on a standard macOS install:
 Prefer the bundled wrapper for first-pass evidence because it sets safe caps, handles `.app` bundles, chooses a native ARM slice from universal Mach-O inputs, runs Hopper's Python exporter with Hopper's injected API globals intact, waits for the JSON artifact, and closes the throwaway Hopper document by default.
 
 ```bash
-scripts/run_hopper_export.sh --output /tmp/target.hopper-snapshot.json /path/to/Target.app
+scripts/run_hopper_export.sh \
+  --summary-output /tmp/target.hopper-summary.md \
+  --output /tmp/target.hopper-snapshot.json \
+  /path/to/Target.app
 scripts/run_hopper_export.sh --output /tmp/tool.hopper-snapshot.json /path/to/tool
 ```
 
@@ -56,6 +60,7 @@ scripts/run_hopper_export.sh \
 
 scripts/run_hopper_export.sh \
   --include-pseudocode \
+  --max-pseudocode-chars 12000 \
   --procedure-pattern 'FunctionOrTypeName|0x100003f50' \
   --max-procedures 50 \
   --max-basic-blocks 32 \
@@ -64,18 +69,44 @@ scripts/run_hopper_export.sh \
   /path/to/Target.app
 ```
 
-Use `--include-pseudocode` only for focused exports. Hopper decompilation can be slow and pseudocode must be treated as a hypothesis.
+Use `--include-pseudocode` only for focused exports. Hopper decompilation can be slow and pseudocode must be treated as a hypothesis. Keep `--max-pseudocode-chars` bounded; optimized Rust and Swift generics can produce megabytes of decompiler text for one source function.
 
 Use `--keep-open` when the user wants the Hopper GUI left open for interactive inspection after the export.
 
 Implementation notes for future maintenance:
 
-- Hopper 6.2.9 presents some Apple system universal binaries as `AArch64e` in the FAT picker. The wrapper uses `-l FAT -s AArch64e -l Mach-O` for `arm64e` instead of relying on `--aarch64`.
+- Hopper 6 presents some Apple system universal binaries as `AArch64e` in the FAT picker. The wrapper uses `-l FAT -s AArch64e -l Mach-O` for `arm64e` instead of relying on `--aarch64`.
 - Hopper injects `Document`, `Segment`, and related API classes into the script's global namespace. Wrapper scripts that dispatch to another Python file must preserve `globals()`; running the exporter through `runpy.run_path()` loses those injected classes.
 - The wrapper writes the generated dispatch script to the process temp directory and removes it after the export completes.
 - String rows include bounded `xrefs_to` entries. Use `--max-string-xrefs 0` to suppress this when a target has many string references, or increase it when string-to-code correlation is the main task.
-- Procedure rows include virtual addresses and file offsets for the entry point, sampled instructions, and call references when Hopper can map the address to a file offset.
+- Procedure rows include virtual addresses and file offsets for the entry point, sampled instructions, and call references when Hopper can map the address to a file offset. Procedure rows also report `basic_blocks_truncated`, each block reports `instructions_truncated`, and pseudocode rows report `pseudocode_length` plus `pseudocode_truncated`.
 - Use `--procedure-pattern` after string/name triage to export only matching procedure addresses, names, demangled names, or signatures.
+
+## Compact Snapshot Summaries
+
+Use the summary script when the raw JSON is too large for direct review:
+
+```bash
+scripts/hopper_snapshot_summary.py \
+  --filter 'FunctionOrTypeName|UniqueString|0x100003f50' \
+  --max-procedures 8 \
+  --max-strings 20 \
+  --max-names 20 \
+  --output /tmp/target.hopper-summary.md \
+  /tmp/target.hopper-snapshot.json
+```
+
+The wrapper can generate this summary after export:
+
+```bash
+scripts/run_hopper_export.sh \
+  --summary-output /tmp/target.hopper-summary.md \
+  --summary-filter 'FunctionOrTypeName|UniqueString|0x100003f50' \
+  --output /tmp/target.hopper-snapshot.json \
+  /path/to/target
+```
+
+Summary filters match procedure identities, names, strings, signatures, addresses, and string-xref procedure text. A string can appear in the summary because one of its xrefs lands in the matched procedure; re-check the string value before treating it as a literal match.
 
 ## Direct Hopper CLI
 

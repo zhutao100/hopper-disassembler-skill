@@ -22,6 +22,8 @@ Use this reference when a macOS target is built from Swift, SwiftUI, AppKit, or 
      --max-names 20000 \
      --max-strings 20000 \
      --max-string-xrefs 32 \
+     --summary-output /tmp/app.swift-triage.hopper-summary.md \
+     --summary-filter 'TypeOrFunction|Unique UI String' \
      --output /tmp/app.swift-triage.hopper-snapshot.json \
      /path/to/App.app
    ```
@@ -37,6 +39,7 @@ Use this reference when a macOS target is built from Swift, SwiftUI, AppKit, or 
      --max-basic-blocks 32 \
      --max-instructions-per-block 16 \
      --max-call-refs 32 \
+     --summary-output /tmp/app.swift-focused.hopper-summary.md \
      --output /tmp/app.swift-focused.hopper-snapshot.json \
      /path/to/App.app
    ```
@@ -59,12 +62,15 @@ Verified pattern from a menu-bar Swift app:
 - Hopper name signal: a demangled procedure like `Module.StatusMenuController.(ConfigureContextMenu in _HASH)() -> ()`.
 - Hopper string signal: each title appeared in `strings[]`, and xrefs to those strings included the context-menu procedure.
 - Additional xrefs existed from other UI surfaces and the main menu, so the string alone was insufficient; the containing procedure confirmed the snippet.
+- Focused procedure signal: the procedure called Swift string bridging, `objc_msgSend`, `objc_release`, and `NSArray` bridging around `NSMenuItem` construction, matching source-level AppKit menu assembly.
 
 ## Swift Gotchas
 
 - Short strings, dictionary keys, enum tags, and small suffix tokens may be encoded inline or packed and may not appear as clean string rows.
+- Verified example: `Quick Start` and `Settings...` in source appeared as short/packed fragments in raw `strings`, while longer titles such as `Reconnect codexd`, `Status Center...`, and `Quit CodexMenuBar` appeared as clean Hopper string rows.
 - Optimized Swift can inline tuples, enum cases, and closures. Decompiler output can hide return-register details; check assembly at return blocks for ABI-level behavior.
 - A string can be referenced by multiple UI surfaces. Do not assign ownership from the first xref.
+- A filtered summary can include nearby strings whose value does not match the source literal because the string's xref procedure matches the filter. Treat those as context until the literal and xref both match.
 - Swift generic and SwiftUI-heavy functions can have very long names and many synthetic callees. Narrow by source type/function first, then inspect callers/callees.
 - Objective-C method-list and Swift metadata sections are good orientation signals, not behavior proof by themselves.
 

@@ -21,6 +21,8 @@ Use this reference when a target is built from Rust sources or contains Rust sta
      --max-names 20000 \
      --max-strings 20000 \
      --max-string-xrefs 32 \
+     --summary-output /tmp/tool.rust-triage.hopper-summary.md \
+     --summary-filter 'crate_name::module::run|unique literal' \
      --output /tmp/tool.rust-triage.hopper-snapshot.json \
      /path/to/tool
    ```
@@ -37,6 +39,8 @@ Use this reference when a target is built from Rust sources or contains Rust sta
      --max-basic-blocks 32 \
      --max-instructions-per-block 16 \
      --max-call-refs 64 \
+     --max-pseudocode-chars 12000 \
+     --summary-output /tmp/tool.rust-focused.hopper-summary.md \
      --output /tmp/tool.rust-focused.hopper-snapshot.json \
      /path/to/tool
    ```
@@ -53,19 +57,21 @@ Use this reference when a target is built from Rust sources or contains Rust sta
 Verified pattern from a Rust command-line wrapper:
 
 - Source snippet: `rgx::run` emits metadata and truncation messages.
-- Hopper name signal: `llm_inspect_wrappers::rgx::run::HASH` at a stable procedure address.
+- Hopper name signal: `llm_inspect_wrappers::rgx::run::HASH` at a procedure address.
 - Hopper string signal: a string row containing `@meta\ttool=rg-x` xrefed to the `rgx::run` procedure.
 - Another row containing `rg-x truncated` was packed together with adjacent literals, but its xref still pointed to `rgx::run`.
+- Focused procedure signal: the optimized `run` procedure had hundreds of basic blocks, direct callees into `std::io::_eprint`, formatting helpers, allocation/deallocation, and local drop glue matching source use of captured `rg --json`, grouping, truncation, and metadata printing.
 
 Use substring matching because Rust/LLVM may pack adjacent literals or formatting fragments into one Hopper string row.
 
 ## Rust Gotchas
 
 - Monomorphization and inlining can make one source function very large. In the verified CLI wrapper, one `run` function had hundreds of basic blocks; focused caps were required to keep snapshots usable.
-- Decompiler output for optimized Rust can be poor for ownership, iterator, and formatting-heavy code. Prefer names, call edges, strings, and basic-block structure.
+- Decompiler output for optimized Rust can be poor for ownership, iterator, and formatting-heavy code. Prefer names, call edges, strings, and basic-block structure. Keep pseudocode capped: a verified `rgx::run` decompile produced multiple megabytes for one function.
 - Formatting macros split behavior across formatting machinery. A source `format!` or `eprintln!` may appear as partial strings plus calls into `core::fmt` or `std::io`.
 - Panic and standard-library strings are noisy. Separate app-owned crate/module names from `std`, `core`, `alloc`, and dependency crates.
 - Optional external demanglers such as `rustfilt` are useful for `nm` output, but Hopper `demangled` fields are the primary evidence inside snapshots.
+- Summary filters can match a string through its xref procedure name even when the string value is only an adjacent packed fragment; verify the value and procedure xref separately.
 
 ## Evidence Checklist
 

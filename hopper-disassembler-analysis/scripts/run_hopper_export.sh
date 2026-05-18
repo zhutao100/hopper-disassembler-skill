@@ -23,8 +23,12 @@ Options:
       --max-call-refs N         Caller/callee refs per procedure cap. Default: 64
       --max-pseudocode-functions N
                                   Pseudocode functions cap. Default: 20
+      --max-pseudocode-chars N   Characters per pseudocode body. Default: 20000
       --procedure-pattern REGEX Export only matching procedure addresses, names,
                                   demangled names, or signatures.
+      --summary-output PATH      Also write a compact Markdown summary for LLM review.
+      --summary-filter REGEX     Filter summary rows by name, demangled name, string,
+                                  signature, address, or xref procedure text.
       --full                    Remove procedure/string/name caps.
       --include-pseudocode      Include limited pseudocode. Slower; disabled by default.
       --keep-open               Leave the Hopper document open after export.
@@ -74,7 +78,10 @@ max_basic_blocks=64
 max_instructions_per_block=8
 max_call_refs=64
 max_pseudocode_functions=20
+max_pseudocode_chars=20000
 procedure_pattern=""
+summary_output=""
+summary_filter=""
 full_export=0
 include_pseudocode=0
 close_after_export=1
@@ -129,8 +136,20 @@ while [[ $# -gt 0 ]]; do
             max_pseudocode_functions="$2"
             shift 2
             ;;
+        --max-pseudocode-chars)
+            max_pseudocode_chars="$2"
+            shift 2
+            ;;
         --procedure-pattern)
             procedure_pattern="$2"
+            shift 2
+            ;;
+        --summary-output)
+            summary_output="$2"
+            shift 2
+            ;;
+        --summary-filter)
+            summary_filter="$2"
             shift 2
             ;;
         --full)
@@ -224,7 +243,7 @@ runner_path="${TMPDIR:-/tmp}/hopper-disassembler-analysis-${$}.py"
 rm -f "${log_path}"
 rm -f "${runner_path}"
 
-python3 - "${runner_path}" "${exporter}" "${output}" "${max_procedures}" "${max_strings}" "${max_names}" "${max_string_xrefs}" "${max_basic_blocks}" "${max_instructions_per_block}" "${max_call_refs}" "${max_pseudocode_functions}" "${procedure_pattern}" "${full_export}" "${include_pseudocode}" "${close_after_export}" <<'PY'
+python3 - "${runner_path}" "${exporter}" "${output}" "${max_procedures}" "${max_strings}" "${max_names}" "${max_string_xrefs}" "${max_basic_blocks}" "${max_instructions_per_block}" "${max_call_refs}" "${max_pseudocode_functions}" "${max_pseudocode_chars}" "${procedure_pattern}" "${full_export}" "${include_pseudocode}" "${close_after_export}" <<'PY'
 from __future__ import annotations
 
 import sys
@@ -240,6 +259,7 @@ keys = [
     "HOPPER_SKILL_MAX_INSTRUCTIONS_PER_BLOCK",
     "HOPPER_SKILL_MAX_CALL_REFS",
     "HOPPER_SKILL_MAX_PSEUDOCODE_FUNCTIONS",
+    "HOPPER_SKILL_MAX_PSEUDOCODE_CHARS",
     "HOPPER_SKILL_PROCEDURE_PATTERN",
     "HOPPER_SKILL_FULL_EXPORT",
     "HOPPER_SKILL_INCLUDE_PSEUDOCODE",
@@ -309,4 +329,15 @@ done
 
 python3 -m json.tool "${output}" >/dev/null
 echo "exported ${output}"
+if [[ -n "${summary_output}" ]]; then
+    mkdir -p "$(dirname "${summary_output}")"
+    summary_output="$(abs_path "${summary_output}")"
+    summary_args=(--output "${summary_output}")
+    if [[ -n "${summary_filter}" ]]; then
+        summary_args+=(--filter "${summary_filter}")
+    fi
+    summary_args+=("${output}")
+    python3 "${script_dir}/hopper_snapshot_summary.py" "${summary_args[@]}"
+    echo "summary ${summary_output}"
+fi
 echo "hopper log ${log_path}"

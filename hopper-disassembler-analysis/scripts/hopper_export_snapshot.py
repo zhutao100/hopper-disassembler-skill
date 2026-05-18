@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 CALL_TYPE_NAMES = {
     0: "none",
@@ -122,7 +122,17 @@ def hopper_version() -> str:
 def truncate(text: str, limit: int) -> str:
     if limit <= 0 or len(text) <= limit:
         return text
+    if limit <= 3:
+        return text[:limit]
     return text[: limit - 3] + "..."
+
+
+def bounded_text(text: str, limit: int) -> tuple[str, int, bool]:
+    if limit < 0 or len(text) <= limit:
+        return text, len(text), False
+    if limit == 0:
+        return "", len(text), bool(text)
+    return truncate(text, limit), len(text), True
 
 
 def tag_names(owner: Any) -> list[str]:
@@ -212,16 +222,16 @@ def xrefs_to_address(
 
 def instruction_rows(
     segment: Any, start: Any, end: Any, max_instructions: int
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], bool]:
     if max_instructions == 0:
-        return []
+        return [], int(safe_call(0, lambda: end - start)) > 0
 
     rows: list[dict[str, Any]] = []
     try:
         cursor = int(start)
         stop = int(end)
     except Exception:
-        return rows
+        return rows, False
 
     while cursor < stop and len(rows) < max_instructions:
         instruction = safe_call(None, segment.getInstructionAtAddress, cursor)
@@ -262,7 +272,7 @@ def instruction_rows(
         except Exception:
             cursor += 1
 
-    return rows
+    return rows, cursor < stop
 
 
 def basic_blocks(
@@ -285,6 +295,9 @@ def basic_blocks(
             )
         start = safe_call(None, block.getStartingAddress)
         end = safe_call(None, block.getEndingAddress)
+        instructions, instructions_truncated = instruction_rows(
+            segment, start, end, max_instructions
+        )
         rows.append(
             {
                 "start": to_hex(start),
@@ -293,7 +306,8 @@ def basic_blocks(
                 "end_file_offset": segment_file_offset_for_address(segment, end),
                 "successors": successors,
                 "tags": tag_names(block),
-                "instructions": instruction_rows(segment, start, end, max_instructions),
+                "instructions": instructions,
+                "instructions_truncated": instructions_truncated,
             }
         )
     return rows
@@ -438,6 +452,7 @@ def collect_procedures(
 
     for segment, procedure, identity in matched[:max_procedures]:
         entry = identity["entry"]
+        basic_block_count = safe_call(None, procedure.getBasicBlockCount)
         row: dict[str, Any] = {
             "address": identity["address"],
             "file_offset": file_offset_for_address(document, entry),
@@ -446,7 +461,10 @@ def collect_procedures(
             "segment": identity["segment"],
             "signature": identity["signature"],
             "heap_size": safe_call(None, procedure.getHeapSize),
-            "basic_block_count": safe_call(None, procedure.getBasicBlockCount),
+            "basic_block_count": basic_block_count,
+            "basic_blocks_truncated": bool(
+                int(basic_block_count or 0) > int(config["max_basic_blocks"])
+            ),
             "locals": local_variables(procedure),
             "tags": tag_names(procedure),
             "comment": safe_text(safe_call("", segment.getCommentAtAddress, entry)),
@@ -462,7 +480,13 @@ def collect_procedures(
         }
 
         if config["include_pseudocode"] and len(rows) < int(config["max_pseudocode_functions"]):
-            row["pseudocode"] = safe_text(safe_call(None, procedure.decompile))
+            pseudocode = safe_text(safe_call(None, procedure.decompile))
+            bounded, length, pseudocode_truncated = bounded_text(
+                pseudocode, int(config["max_pseudocode_chars"])
+            )
+            row["pseudocode"] = bounded
+            row["pseudocode_length"] = length
+            row["pseudocode_truncated"] = pseudocode_truncated
 
         rows.append(row)
     return rows, len(procedures), len(matched), truncated
@@ -495,6 +519,7 @@ def collect_snapshot(document: Any) -> dict[str, Any]:
         "max_string_length": env_int("HOPPER_SKILL_MAX_STRING_LENGTH", 4096),
         "include_pseudocode": env_flag("HOPPER_SKILL_INCLUDE_PSEUDOCODE", False),
         "max_pseudocode_functions": env_int("HOPPER_SKILL_MAX_PSEUDOCODE_FUNCTIONS", 20),
+        "max_pseudocode_chars": env_int("HOPPER_SKILL_MAX_PSEUDOCODE_CHARS", 20000),
         "procedure_pattern": env_text("HOPPER_SKILL_PROCEDURE_PATTERN"),
     }
 
