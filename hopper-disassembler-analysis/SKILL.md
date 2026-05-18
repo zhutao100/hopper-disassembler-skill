@@ -1,6 +1,6 @@
 ---
 name: hopper-disassembler-analysis
-description: Use Hopper Disassembler on macOS to inspect binaries, app bundles, Mach-O files, universal slices, Hopper databases, procedures, call graphs, strings, xrefs, pseudocode, annotations, and live Hopper MCP sessions. Trigger when the user asks for reverse engineering, static binary analysis, macOS app binary inspection, Hopper automation, Hopper Python scripting, Hopper MCP setup, or evidence-backed reports from local executables.
+description: Use Hopper Disassembler on macOS to inspect binaries, app bundles, Mach-O files, universal slices, Hopper databases, procedures, call graphs, strings, xrefs, pseudocode, annotations, source-to-binary correlation, and live Hopper MCP sessions. Trigger when the user asks for reverse engineering, static binary analysis, macOS app binary inspection, Hopper automation, Hopper Python scripting, Hopper MCP setup, source-backed binary analysis, or evidence-backed reports from local executables.
 ---
 
 # Hopper Disassembler Analysis
@@ -14,6 +14,7 @@ Use Hopper as the evidence source for local binary analysis. Prefer bounded, rep
 - Use the host Hopper installation for read-only disassembly when Hopper is licensed only on the host.
 - Use a disposable VM/sandbox before running modified binaries or generated executables.
 - Treat Hopper pseudocode as a hypothesis until assembly, xrefs, imports, strings, or source corroborate it.
+- When source is available, analyze one narrow source snippet at a time and require at least two Hopper signals before mapping source behavior to binary behavior.
 
 ## Quick Workflow
 
@@ -26,6 +27,8 @@ Use Hopper as the evidence source for local binary analysis. Prefer bounded, rep
      "/Applications/Hopper Disassembler.app/Contents/Info.plist"
    scripts/hopper_mcp_probe.py --json --call-tool none
    ```
+
+   If the `HopperMCPServer` symlink is not installed, pass `--server "/Applications/Hopper Disassembler.app/Contents/MacOS/HopperMCPServer"` to probe the bundled server directly.
 
 2. Resolve the target.
 
@@ -67,7 +70,9 @@ Use Hopper as the evidence source for local binary analysis. Prefer bounded, rep
    ```bash
    scripts/run_hopper_export.sh \
      --include-pseudocode \
-     --max-procedures 50 \
+     --procedure-pattern 'FunctionOrTypeName|0x100003f50' \
+     --max-procedures 20 \
+     --max-basic-blocks 32 \
      --output /tmp/target.focused-pseudo.hopper-snapshot.json \
      /path/to/target
    ```
@@ -97,7 +102,10 @@ Use Hopper as the evidence source for local binary analysis. Prefer bounded, rep
    grep -R --line-number "StringOrSymbolFromHopper" /path/to/source
    ```
 
-   With source available, pick a small snippet and verify it through at least two Hopper signals: a demangled name or selector, a string plus xrefs, callee/import evidence, basic-block/branch structure, or focused pseudocode. For Swift binaries, search demangled names and remember that short string literals may be encoded as immediate values rather than exported strings.
+   With source available, pick a small snippet and verify it through at least two Hopper signals: a demangled name or selector, a string plus xrefs, callee/import evidence, basic-block/branch structure, or focused pseudocode. Load language-specific gotchas on demand:
+
+   - Swift or SwiftUI/AppKit target: `references/source-correlation-swift.md`
+   - Rust target: `references/source-correlation-rust.md`
 
 6. Use Hopper MCP for live document queries.
 
@@ -118,7 +126,7 @@ Use Hopper as the evidence source for local binary analysis. Prefer bounded, rep
 
 - `scripts/install_codex_skill.sh`: Copy this skill folder into a Codex CLI skills directory.
 - `scripts/run_hopper_export.sh`: Open a binary or `.app` in Hopper, run the bundled exporter, wait for JSON, and close the throwaway Hopper document by default.
-- `scripts/hopper_export_snapshot.py`: Hopper Python script used by the wrapper. It exports metadata, segments, sections, strings with bounded xrefs, names, procedures, call refs, basic blocks, sampled instructions, comments, tags, and optional pseudocode.
+- `scripts/hopper_export_snapshot.py`: Hopper Python script used by the wrapper. It exports metadata, segments, sections, strings with bounded xrefs, names, procedures, call refs, basic blocks, sampled instructions, comments, tags, file offsets, and optional pseudocode.
 - `scripts/hopper_mcp_probe.py`: Probe Hopper's JSON-lines MCP server, list tools, inspect schemas, and call read tools with JSON arguments.
 - `scripts/install_codex_hopper_mcp.sh`: Register Hopper MCP with Codex CLI after probing the server.
 
@@ -136,3 +144,5 @@ Load only the reference needed for the current task:
 - `references/hopper-automation.md`: Hopper CLI launcher, universal-slice selection, MCP setup, tool surface, and troubleshooting.
 - `references/hopper-python-api.md`: Hopper Python API patterns, custom script templates, xrefs, annotations, and pseudocode discipline.
 - `references/macos-binary-workflow.md`: macOS app bundle analysis, source correlation, Swift gotchas, triage, and modification boundaries.
+- `references/source-correlation-swift.md`: Swift/AppKit/SwiftUI source-to-binary correlation workflow and gotchas.
+- `references/source-correlation-rust.md`: Rust source-to-binary correlation workflow and gotchas.

@@ -12,6 +12,7 @@ Use this reference when writing or modifying scripts that run inside Hopper.
 - [Walk Basic Blocks and Instructions](#walk-basic-blocks-and-instructions)
 - [Strings and Names](#strings-and-names)
 - [Cross-References](#cross-references)
+- [Addresses and File Offsets](#addresses-and-file-offsets)
 - [Comments, Labels, Tags, and Bookmarks](#comments-labels-tags-and-bookmarks)
 - [Pseudocode Discipline](#pseudocode-discipline)
 
@@ -212,6 +213,20 @@ for ref in segment.getReferencesOfAddress(string_address):
         print(hex(ref), hex(entry), document.getNameAtAddress(entry))
 ```
 
+## Addresses and File Offsets
+
+Use Hopper's mapping APIs before byte-level claims:
+
+```python
+segment = document.getSegmentAtAddress(address)
+if segment:
+    print(segment.getFileOffsetForAddress(address))
+print(document.getFileOffsetFromAddress(address))
+print(document.getAddressFromFileOffset(file_offset))
+```
+
+For universal Mach-O files, Hopper is analyzing one selected thin slice. Account for the FAT slice offset separately before writing to the combined file.
+
 ## Comments, Labels, Tags, and Bookmarks
 
 Use conservative write-back. A wrong label can mislead later analysis.
@@ -229,6 +244,17 @@ document.setBookmarkName(address, "analysis checkpoint")
 ```
 
 Prefer batch review in JSON first. `assets/hopper-annotation-payload-template.json` is a starting point for annotation payloads.
+
+For byte-level experiments in a copy, assemble first and write bytes explicitly:
+
+```python
+patch = document.assemble("nop", address, 0)
+segment.writeBytes(address, bytes(patch))
+produced_path = document.produceNewExecutable(True)
+print(produced_path)
+```
+
+Use this only in a disposable copy or VM workflow, then verify file offsets and code signatures outside Hopper.
 
 ## Pseudocode Discipline
 

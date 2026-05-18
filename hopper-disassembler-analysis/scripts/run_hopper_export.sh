@@ -17,6 +17,14 @@ Options:
       --max-strings N           String cap. Default: 2000
       --max-names N             Named-address cap. Default: 3000
       --max-string-xrefs N      Xrefs per string cap. Default: 16
+      --max-basic-blocks N      Basic blocks per procedure cap. Default: 64
+      --max-instructions-per-block N
+                                  Instructions per basic block cap. Default: 8
+      --max-call-refs N         Caller/callee refs per procedure cap. Default: 64
+      --max-pseudocode-functions N
+                                  Pseudocode functions cap. Default: 20
+      --procedure-pattern REGEX Export only matching procedure addresses, names,
+                                  demangled names, or signatures.
       --full                    Remove procedure/string/name caps.
       --include-pseudocode      Include limited pseudocode. Slower; disabled by default.
       --keep-open               Leave the Hopper document open after export.
@@ -62,6 +70,11 @@ max_procedures=500
 max_strings=2000
 max_names=3000
 max_string_xrefs=16
+max_basic_blocks=64
+max_instructions_per_block=8
+max_call_refs=64
+max_pseudocode_functions=20
+procedure_pattern=""
 full_export=0
 include_pseudocode=0
 close_after_export=1
@@ -98,6 +111,26 @@ while [[ $# -gt 0 ]]; do
             ;;
         --max-string-xrefs)
             max_string_xrefs="$2"
+            shift 2
+            ;;
+        --max-basic-blocks)
+            max_basic_blocks="$2"
+            shift 2
+            ;;
+        --max-instructions-per-block)
+            max_instructions_per_block="$2"
+            shift 2
+            ;;
+        --max-call-refs)
+            max_call_refs="$2"
+            shift 2
+            ;;
+        --max-pseudocode-functions)
+            max_pseudocode_functions="$2"
+            shift 2
+            ;;
+        --procedure-pattern)
+            procedure_pattern="$2"
             shift 2
             ;;
         --full)
@@ -191,7 +224,7 @@ runner_path="${TMPDIR:-/tmp}/hopper-disassembler-analysis-${$}.py"
 rm -f "${log_path}"
 rm -f "${runner_path}"
 
-python3 - "${runner_path}" "${exporter}" "${output}" "${max_procedures}" "${max_strings}" "${max_names}" "${max_string_xrefs}" "${full_export}" "${include_pseudocode}" "${close_after_export}" <<'PY'
+python3 - "${runner_path}" "${exporter}" "${output}" "${max_procedures}" "${max_strings}" "${max_names}" "${max_string_xrefs}" "${max_basic_blocks}" "${max_instructions_per_block}" "${max_call_refs}" "${max_pseudocode_functions}" "${procedure_pattern}" "${full_export}" "${include_pseudocode}" "${close_after_export}" <<'PY'
 from __future__ import annotations
 
 import sys
@@ -203,6 +236,11 @@ keys = [
     "HOPPER_SKILL_MAX_STRINGS",
     "HOPPER_SKILL_MAX_NAMES",
     "HOPPER_SKILL_MAX_STRING_XREFS",
+    "HOPPER_SKILL_MAX_BASIC_BLOCKS",
+    "HOPPER_SKILL_MAX_INSTRUCTIONS_PER_BLOCK",
+    "HOPPER_SKILL_MAX_CALL_REFS",
+    "HOPPER_SKILL_MAX_PSEUDOCODE_FUNCTIONS",
+    "HOPPER_SKILL_PROCEDURE_PATTERN",
     "HOPPER_SKILL_FULL_EXPORT",
     "HOPPER_SKILL_INCLUDE_PSEUDOCODE",
     "HOPPER_SKILL_CLOSE_AFTER_EXPORT",

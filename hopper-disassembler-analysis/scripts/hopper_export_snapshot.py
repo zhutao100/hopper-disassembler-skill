@@ -19,7 +19,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
+
+CALL_TYPE_NAMES = {
+    0: "none",
+    1: "unknown",
+    2: "direct",
+    3: "objc",
+}
 
 
 def env_flag(name: str, default: bool = False) -> bool:
@@ -37,6 +44,13 @@ def env_int(name: str, default: int) -> int:
         return max(0, int(value, 10))
     except ValueError:
         return default
+
+
+def env_text(name: str, default: str = "") -> str:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value
 
 
 def safe_call(default: Any, func: Any, *args: Any) -> Any:
@@ -60,6 +74,49 @@ def to_hex(value: Any) -> str | None:
         return f"0x{int(value):x}"
     except Exception:
         return None
+
+
+def call_type_name(value: Any) -> str:
+    try:
+        return CALL_TYPE_NAMES.get(int(value), f"unknown-{value}")
+    except Exception:
+        return "unknown"
+
+
+def valid_offset(value: Any) -> bool:
+    if value is None or value is False:
+        return False
+    try:
+        return int(value) >= 0
+    except Exception:
+        return False
+
+
+def file_offset_for_address(document: Any, address: Any) -> str | None:
+    segment = safe_call(None, document.getSegmentAtAddress, address)
+    if segment is not None:
+        offset = safe_call(None, segment.getFileOffsetForAddress, address)
+        if valid_offset(offset):
+            return to_hex(offset)
+
+    offset = safe_call(None, document.getFileOffsetFromAddress, address)
+    if valid_offset(offset):
+        return to_hex(offset)
+    return None
+
+
+def segment_file_offset_for_address(segment: Any, address: Any) -> str | None:
+    offset = safe_call(None, segment.getFileOffsetForAddress, address)
+    if valid_offset(offset):
+        return to_hex(offset)
+    return None
+
+
+def hopper_version() -> str:
+    info = globals().get("GlobalInformation")
+    if info is None:
+        return ""
+    return safe_text(safe_call("", info.getHopperVersion))
 
 
 def truncate(text: str, limit: int) -> str:
@@ -99,12 +156,16 @@ def call_refs(document: Any, procedure: Any, direction: str, max_refs: int) -> l
     for ref in refs[:max_refs]:
         from_address = safe_call(None, ref.fromAddress)
         to_address = safe_call(None, ref.toAddress)
+        type_value = safe_call(None, ref.type)
         result.append(
             {
                 "from": to_hex(from_address),
+                "from_file_offset": file_offset_for_address(document, from_address),
                 "to": to_hex(to_address),
+                "to_file_offset": file_offset_for_address(document, to_address),
                 "to_name": safe_text(safe_call(None, document.getNameAtAddress, to_address)),
-                "type": safe_call(None, ref.type),
+                "type": type_value,
+                "type_name": call_type_name(type_value),
             }
         )
     return result
@@ -141,6 +202,7 @@ def xrefs_to_address(
     for ref in refs[:max_refs]:
         row = {
             "from": to_hex(ref),
+            "from_file_offset": file_offset_for_address(document, ref),
             "from_name": safe_text(safe_call("", document.getNameAtAddress, ref)),
         }
         row.update(containing_procedure(document, ref))
@@ -182,6 +244,7 @@ def instruction_rows(
         rows.append(
             {
                 "address": to_hex(cursor),
+                "file_offset": segment_file_offset_for_address(segment, cursor),
                 "mnemonic": safe_text(safe_call("", instruction.getInstructionString)),
                 "formatted_args": formatted_args,
                 "raw_args": raw_args,
@@ -225,7 +288,9 @@ def basic_blocks(
         rows.append(
             {
                 "start": to_hex(start),
+                "start_file_offset": segment_file_offset_for_address(segment, start),
                 "end": to_hex(end),
+                "end_file_offset": segment_file_offset_for_address(segment, end),
                 "successors": successors,
                 "tags": tag_names(block),
                 "instructions": instruction_rows(segment, start, end, max_instructions),
@@ -277,6 +342,7 @@ def collect_strings(
             rows.append(
                 {
                     "address": to_hex(address),
+                    "file_offset": file_offset_for_address(document, address),
                     "segment": segment_name,
                     "value": truncate(text, max_string_length),
                     "truncated_value": max_string_length > 0 and len(text) > max_string_length,
@@ -301,6 +367,7 @@ def collect_names(document: Any, max_names: int) -> tuple[list[dict[str, Any]], 
             rows.append(
                 {
                     "address": to_hex(address),
+                    "file_offset": file_offset_for_address(document, address),
                     "name": safe_text(name),
                     "segment": segment_name,
                     "demangled": safe_text(
@@ -322,23 +389,62 @@ def iter_procedures(document: Any) -> list[tuple[Any, Any]]:
     return rows
 
 
+def procedure_identity(segment: Any, procedure: Any) -> dict[str, Any]:
+    entry = safe_call(None, procedure.getEntryPoint)
+    return {
+        "entry": entry,
+        "address": to_hex(entry),
+        "name": safe_text(safe_call("", segment.getNameAtAddress, entry)),
+        "demangled": safe_text(safe_call("", segment.getDemangledNameAtAddress, entry)),
+        "signature": safe_text(safe_call("", procedure.signatureString)),
+        "segment": safe_text(safe_call("", segment.getName)),
+    }
+
+
+def compile_optional_regex(pattern: str) -> re.Pattern[str] | None:
+    if not pattern:
+        return None
+    return re.compile(pattern)
+
+
+def procedure_matches(identity: dict[str, Any], pattern: re.Pattern[str] | None) -> bool:
+    if pattern is None:
+        return True
+    fields = [
+        identity.get("address"),
+        identity.get("name"),
+        identity.get("demangled"),
+        identity.get("signature"),
+        identity.get("segment"),
+    ]
+    return any(pattern.search(safe_text(field)) for field in fields)
+
+
 def collect_procedures(
-    document: Any, config: dict[str, int | bool]
-) -> tuple[list[dict[str, Any]], int, bool]:
+    document: Any, config: dict[str, Any]
+) -> tuple[list[dict[str, Any]], int, int, bool]:
     rows: list[dict[str, Any]] = []
+    procedure_pattern = compile_optional_regex(safe_text(config["procedure_pattern"]))
     procedures = iter_procedures(document)
     max_procedures = int(config["max_procedures"])
-    truncated = len(procedures) > max_procedures
 
-    for segment, procedure in procedures[:max_procedures]:
-        entry = safe_call(None, procedure.getEntryPoint)
-        name = safe_text(safe_call("", segment.getNameAtAddress, entry))
+    matched: list[tuple[Any, Any, dict[str, Any]]] = []
+    for segment, procedure in procedures:
+        identity = procedure_identity(segment, procedure)
+        if procedure_matches(identity, procedure_pattern):
+            matched.append((segment, procedure, identity))
+
+    truncated = len(matched) > max_procedures
+
+    for segment, procedure, identity in matched[:max_procedures]:
+        entry = identity["entry"]
         row: dict[str, Any] = {
-            "address": to_hex(entry),
-            "name": name,
-            "demangled": safe_text(safe_call("", segment.getDemangledNameAtAddress, entry)),
-            "segment": safe_text(safe_call("", segment.getName)),
-            "signature": safe_text(safe_call("", procedure.signatureString)),
+            "address": identity["address"],
+            "file_offset": file_offset_for_address(document, entry),
+            "name": identity["name"],
+            "demangled": identity["demangled"],
+            "segment": identity["segment"],
+            "signature": identity["signature"],
             "heap_size": safe_call(None, procedure.getHeapSize),
             "basic_block_count": safe_call(None, procedure.getBasicBlockCount),
             "locals": local_variables(procedure),
@@ -359,7 +465,7 @@ def collect_procedures(
             row["pseudocode"] = safe_text(safe_call(None, procedure.decompile))
 
         rows.append(row)
-    return rows, len(procedures), truncated
+    return rows, len(procedures), len(matched), truncated
 
 
 def default_output_path(document: Any) -> Path:
@@ -378,7 +484,7 @@ def collect_snapshot(document: Any) -> dict[str, Any]:
     max_procedures = high_cap if full_export else env_int("HOPPER_SKILL_MAX_PROCEDURES", 500)
     max_strings = high_cap if full_export else env_int("HOPPER_SKILL_MAX_STRINGS", 2000)
     max_names = high_cap if full_export else env_int("HOPPER_SKILL_MAX_NAMES", 3000)
-    config: dict[str, int | bool] = {
+    config: dict[str, Any] = {
         "max_procedures": max_procedures,
         "max_strings": max_strings,
         "max_names": max_names,
@@ -389,6 +495,7 @@ def collect_snapshot(document: Any) -> dict[str, Any]:
         "max_string_length": env_int("HOPPER_SKILL_MAX_STRING_LENGTH", 4096),
         "include_pseudocode": env_flag("HOPPER_SKILL_INCLUDE_PSEUDOCODE", False),
         "max_pseudocode_functions": env_int("HOPPER_SKILL_MAX_PSEUDOCODE_FUNCTIONS", 20),
+        "procedure_pattern": env_text("HOPPER_SKILL_PROCEDURE_PATTERN"),
     }
 
     background_active = bool(safe_call(False, document.backgroundProcessActive))
@@ -400,7 +507,9 @@ def collect_snapshot(document: Any) -> dict[str, Any]:
         int(config["max_string_xrefs"]),
     )
     names, names_truncated = collect_names(document, int(config["max_names"]))
-    procedures, total_procedures, procedures_truncated = collect_procedures(document, config)
+    procedures, total_procedures, matched_procedures, procedures_truncated = collect_procedures(
+        document, config
+    )
 
     return {
         "tool": "hopper-disassembler-analysis/scripts/hopper_export_snapshot.py",
@@ -413,6 +522,7 @@ def collect_snapshot(document: Any) -> dict[str, Any]:
             "entry_point": to_hex(safe_call(None, document.getEntryPoint)),
             "is_64_bits": bool(safe_call(False, document.is64Bits)),
             "background_analysis_active": background_active,
+            "hopper_version": hopper_version(),
         },
         "limits": config,
         "capabilities": {
@@ -424,6 +534,7 @@ def collect_snapshot(document: Any) -> dict[str, Any]:
             "strings_exported": len(strings),
             "names_exported": len(names),
             "procedures_total": total_procedures,
+            "procedures_matched": matched_procedures,
             "procedures_exported": len(procedures),
         },
         "truncated": {

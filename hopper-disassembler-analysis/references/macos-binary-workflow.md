@@ -9,7 +9,7 @@ Use this reference when the target is a macOS app bundle, command-line tool, fra
 - [3. Export Hopper Evidence](#3-export-hopper-evidence)
 - [4. Read and Triage the Snapshot](#4-read-and-triage-the-snapshot)
 - [5. Correlate With Source When Available](#5-correlate-with-source-when-available)
-- [6. Swift Correlation Gotchas](#6-swift-correlation-gotchas)
+- [6. Language-Specific Source Correlation](#6-language-specific-source-correlation)
 - [7. Triage Procedure Sets](#7-triage-procedure-sets)
 - [8. Reporting Rules](#8-reporting-rules)
 - [9. Modification Boundary](#9-modification-boundary)
@@ -143,8 +143,9 @@ Recommended source-backed loop:
 3. Export a snapshot with enough `--max-procedures`, `--max-names`, and `--max-strings` to avoid truncating the target area.
 4. Search `names` for demangled Swift fragments or Objective-C selectors.
 5. Search `strings`; use each string's `xrefs_to` or live MCP `xrefs` to find referencing instructions and containing procedures.
-6. Use live MCP `procedure_info` and `procedure_assembly` for the focused function. Use `procedure_pseudo_code` only after checking the basic-block count.
-7. Compare the assembly or pseudocode with source branches, calls, return cases, and error strings.
+6. Rerun with `--procedure-pattern` for the matched function, selector, or address when the first snapshot is too broad.
+7. Use live MCP `procedure_info` and `procedure_assembly` for the focused function. Use `procedure_pseudo_code` only after checking the basic-block count.
+8. Compare the assembly or pseudocode with source branches, calls, return cases, and error strings.
 
 Useful MCP calls:
 
@@ -156,15 +157,19 @@ scripts/hopper_mcp_probe.py --json --call-tool procedure_info --tool-args '{"pro
 scripts/hopper_mcp_probe.py --json --call-tool procedure_assembly --tool-args '{"procedure":"0x100018ac8"}'
 ```
 
-## 6. Swift Correlation Gotchas
+## 6. Language-Specific Source Correlation
 
-- Swift symbols may be long but demangled names often preserve module, type, function, generic specialization, and closure context. Prefer `search_name` or snapshot `demangled` fields before scanning raw assembly.
+Load the focused language reference only when needed:
+
+- Swift, SwiftUI, AppKit, Objective-C selector surfaces: `source-correlation-swift.md`
+- Rust command-line tools, monomorphized/generic code, and crate/module names: `source-correlation-rust.md`
+
+Common gotchas:
+
 - Procedure tools in Hopper MCP use `procedure` for either a symbol or a hexadecimal address. `address` is only for address-oriented tools such as `xrefs` and `goto_address`.
-- Short Swift strings such as dictionary keys or suffix tokens can be encoded as immediates, not as rows in Hopper's string list. Confirm with assembly constants and calls such as `String.hasSuffix`, dictionary `find`, or `_parseInteger`.
-- Optimized Swift can inline tuples and enum cases. A decompiler may show only one return register even when source returns a struct or tuple; check the ABI-level register moves at the return block.
-- String xrefs can point to UI presentation or description getters rather than the business function that computed a value. Follow callers and callees before assigning ownership.
-- Mangled private symbols with file-hash components still correlate well when the demangled name includes the source type/function.
+- String xrefs can point to UI presentation, logging, formatting, or description helpers rather than the business function that computed a value. Follow callers and callees before assigning ownership.
 - For functions with many basic blocks, focused assembly can be more reliable than full pseudocode. Decompilation may be slow and can produce very large output.
+- Hopper string rows can represent adjacent or packed literals. Search for substrings and verify the xref procedure rather than assuming the whole exported `value` is one source literal.
 
 ## 7. Triage Procedure Sets
 
