@@ -1,0 +1,11 @@
+{
+  "snapshot": "/tmp/target.hopper-snapshot.json",
+  "patterns": [
+    "FunctionOrTypeName",
+    "Unique string or selector"
+  ],
+  "ignore_case": true,
+  "max_call_refs": 8,
+  "max_basic_blocks": 2,
+  "notes": "Use scripts/hopper_evidence_search.py SNAPSHOT PATTERN [PATTERN...] to produce a compact evidence surface."
+}

@@ -2,27 +2,46 @@
 
 This repository contains one installable skill: `hopper-disassembler-analysis`.
 
-Prefer `scripts/run_hopper_export.sh` for validation runs. Write generated snapshots to `/tmp` unless a task explicitly asks for persistent artifacts.
-Use the host Hopper installation for read-only exports unless the user requests a VM. Use a disposable VM/sandbox before running modified binaries or generated executables.
+Use the toolchain inventory → target inventory → bounded snapshot → evidence search loop as the default. Use address mapping before byte-level reasoning. Use the universal workspace generator for authorized slice mutation. Use live Hopper MCP only when a task needs the active Hopper document, focused pseudocode, live cursor state, or reviewed annotations.
 
 ## Standards
 
-Maintain compatibility with:
+Maintain compatibility with current Codex CLI skills and the Open Agent Skills layout:
 
-- Codex CLI skills: required `SKILL.md` with `name` and `description`, optional `agents/openai.yaml`, `scripts/`, `references/`, and `assets/`.
-- Open Agent Skills: skill folder name must match `SKILL.md` `name`; `name` uses lowercase letters, digits, and hyphens; `description` describes both behavior and triggers.
+- Root repository: `README.md`, `AGENTS.md`, and one or more skill directories.
+- Skill directory name must match `SKILL.md` frontmatter `name`.
+- `SKILL.md` must include `name` and `description` and should stay under 500 lines.
+- Put deterministic tooling in `scripts/`.
+- Put reusable templates and config snippets in `assets/`.
+- Put focused, conditionally loaded documentation in `references/`.
+- Keep file references one level deep from `SKILL.md`.
 
-Do not add process notes or ephemeral research logs to the skill. Put durable operational knowledge in `SKILL.md` or a focused reference file.
+## Development Workflow
 
-## Validation
-
-Run these after script or skill metadata changes:
+After changing scripts, metadata, assets, or references, run:
 
 ```bash
-python3 "$HOME/.codex/skills/.system/skill-creator/scripts/quick_validate.py" hopper-disassembler-analysis
-python3 -m py_compile hopper-disassembler-analysis/scripts/hopper_export_snapshot.py hopper-disassembler-analysis/scripts/hopper_mcp_probe.py hopper-disassembler-analysis/scripts/hopper_snapshot_summary.py
-bash -n hopper-disassembler-analysis/scripts/run_hopper_export.sh hopper-disassembler-analysis/scripts/install_codex_hopper_mcp.sh hopper-disassembler-analysis/scripts/install_codex_skill.sh
+hopper-disassembler-analysis/scripts/validate_skill_repo.py .
+python3 -m py_compile hopper-disassembler-analysis/scripts/*.py
+bash -n hopper-disassembler-analysis/scripts/*.sh
+```
+
+On a macOS host with Hopper installed, also run:
+
+```bash
 hopper-disassembler-analysis/scripts/hopper_mcp_probe.py --json --call-tool none
-hopper-disassembler-analysis/scripts/run_hopper_export.sh --timeout 180 --procedure-pattern 'EntryPoint|sub_' --max-procedures 5 --max-basic-blocks 2 --max-strings 10 --max-string-xrefs 4 --summary-output /tmp/echo.hopper-summary.md --output /tmp/echo.hopper-snapshot.json /bin/echo
-hopper-disassembler-analysis/scripts/hopper_snapshot_summary.py --filter 'EntryPoint|sub_' /tmp/echo.hopper-snapshot.json >/tmp/echo.hopper-summary.check.md
+hopper-disassembler-analysis/scripts/macos_toolchain_inventory.py --output /tmp/macos-toolchain.md
+hopper-disassembler-analysis/scripts/inspect_macho_targets.py --include-deps --output /tmp/echo.inventory.md /bin/echo
+hopper-disassembler-analysis/scripts/macho_address_map.py --address 0x100000000 /bin/echo >/tmp/echo.address-map.txt || true
+hopper-disassembler-analysis/scripts/run_hopper_export.sh \
+  --timeout 180 \
+  --procedure-pattern 'EntryPoint|sub_' \
+  --max-procedures 5 \
+  --max-basic-blocks 2 \
+  --max-strings 10 \
+  --max-string-xrefs 4 \
+  --summary-output /tmp/echo.hopper-summary.md \
+  --output /tmp/echo.hopper-snapshot.json \
+  /bin/echo
+hopper-disassembler-analysis/scripts/hopper_evidence_search.py /tmp/echo.hopper-snapshot.json 'EntryPoint|sub_' >/tmp/echo.evidence.md
 ```

@@ -5,8 +5,10 @@ Use this reference when the task needs command-line Hopper runs, MCP setup, or r
 ## Contents
 
 - [Quick Environment Checks](#quick-environment-checks)
+- [Pre-Hopper Target Inventory](#pre-hopper-target-inventory)
 - [Batch Snapshot Export](#batch-snapshot-export)
 - [Compact Snapshot Summaries](#compact-snapshot-summaries)
+- [Snapshot Evidence Search](#snapshot-evidence-search)
 - [Direct Hopper CLI](#direct-hopper-cli)
 - [Focused Procedure Exports](#focused-procedure-exports)
 - [AppleScript Automation](#applescript-automation)
@@ -16,8 +18,8 @@ Use this reference when the task needs command-line Hopper runs, MCP setup, or r
 ## Quick Environment Checks
 
 ```bash
-command -v hopper
-command -v HopperMCPServer
+command -v hopper || true
+command -v HopperMCPServer || true
 /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "/Applications/Hopper Disassembler.app/Contents/Info.plist"
 scripts/hopper_mcp_probe.py --json --call-tool none
 ```
@@ -25,9 +27,35 @@ scripts/hopper_mcp_probe.py --json --call-tool none
 Expected paths on a standard macOS install:
 
 - Hopper app: `/Applications/Hopper Disassembler.app`
-- Hopper CLI launcher: `/usr/local/bin/hopper`
-- MCP server symlink: `/usr/local/bin/HopperMCPServer`
+- Hopper CLI launcher: `/Applications/Hopper Disassembler.app/Contents/MacOS/hopper` or a `hopper` symlink in `PATH`
 - Bundled MCP binary: `/Applications/Hopper Disassembler.app/Contents/MacOS/HopperMCPServer`
+- Optional MCP server symlink: `/usr/local/bin/HopperMCPServer`
+
+
+## Pre-Hopper Target Inventory
+
+Run target inventory before opening Hopper. This avoids wasting analysis time on the wrong Mach-O inside an app bundle.
+
+```bash
+scripts/inspect_macho_targets.py \
+  --include-deps \
+  --output /tmp/target.inventory.md \
+  /path/to/Target.app
+```
+
+Use the inventory to choose the binary to pass to Hopper:
+
+- Main executable for lifecycle and app-owned command handling.
+- XPC service for privileged/helper IPC flows.
+- App-owned framework when source symbols or strings live outside the main executable.
+- Login item or nested helper app when state retention, menu-bar, updater, or background behavior is the question.
+
+The script can also emit JSON for machine processing:
+
+```bash
+scripts/inspect_macho_targets.py --include-deps --format json /path/to/Target.app \
+  >/tmp/target.inventory.json
+```
 
 ## Batch Snapshot Export
 
@@ -108,6 +136,31 @@ scripts/run_hopper_export.sh \
 
 Summary filters match procedure identities, names, strings, signatures, addresses, and string-xref procedure text. A string can appear in the summary because one of its xrefs lands in the matched procedure; re-check the string value before treating it as a literal match.
 
+
+## Snapshot Evidence Search
+
+Use this after exporting a snapshot when the raw JSON is too large or when an agent needs a narrow evidence surface.
+
+```bash
+scripts/hopper_evidence_search.py \
+  --ignore-case \
+  --output /tmp/target.evidence.md \
+  /tmp/target.hopper-snapshot.json \
+  'FunctionOrTypeName|UniqueString|0x100003f50'
+```
+
+Multiple patterns are ANDed, so use one broad alternation for alternatives and separate patterns for required co-occurrence:
+
+```bash
+scripts/hopper_evidence_search.py /tmp/target.hopper-snapshot.json 'SettingsController' 'FeatureState'
+```
+
+For downstream tools, request JSON:
+
+```bash
+scripts/hopper_evidence_search.py --format json /tmp/target.hopper-snapshot.json 'URLSession|SecItem'
+```
+
 ## Direct Hopper CLI
 
 Hopper's launcher accepts loader chains and script execution:
@@ -173,7 +226,7 @@ APPLESCRIPT
 
 If macOS prompts for Automation permission, grant it for the terminal or agent host process that launched `osascript` or `hopper`.
 
-The `/usr/local/bin/hopper` launcher drives the Hopper app through AppleEvents. In unattended VMs or CI, seed or grant Automation permission for the launcher client to control Hopper's bundle identifier before running batch exports. Without that grant, the launcher can fail with an AppleEvents authorization error before the Python exporter runs.
+The Hopper CLI launcher drives the Hopper app through AppleEvents. In unattended VMs or CI, seed or grant Automation permission for the launcher client to control Hopper's bundle identifier before running batch exports. Without that grant, the launcher can fail with an AppleEvents authorization error before the Python exporter runs.
 
 ## Official Hopper MCP Server
 
@@ -182,7 +235,7 @@ Hopper 6 exposes a stdio JSON-lines MCP server. Probe it before relying on it:
 ```bash
 scripts/hopper_mcp_probe.py
 scripts/hopper_mcp_probe.py --json --call-tool list_documents
-scripts/hopper_mcp_probe.py --json --call-tool search_strings --tool-args '{"pattern":"license|trial"}'
+scripts/hopper_mcp_probe.py --json --call-tool search_strings --tool-args '{"pattern":"settings|feature"}'
 scripts/hopper_mcp_probe.py --json --call-tool procedure_assembly --tool-args '{"procedure":"0x100003f50"}'
 scripts/hopper_mcp_probe.py --json --include-tool-schemas --call-tool none
 ```
@@ -202,7 +255,7 @@ Install it for Codex CLI:
 scripts/install_codex_hopper_mcp.sh --replace
 ```
 
-Generic MCP clients can use `assets/generic-mcp-hopper.json`. Codex TOML users can merge `assets/codex-mcp-hopper.toml` into `~/.codex/config.toml`.
+Generic MCP clients can use `assets/generic-mcp-hopper-direct.json` for the bundled server path or `assets/generic-mcp-hopper.json` for a symlink path. Codex TOML users can merge `assets/codex-mcp-hopper-direct.toml` or `assets/codex-mcp-hopper.toml` into their MCP config.
 
 Observed official tool surface:
 
@@ -227,6 +280,6 @@ Tool argument gotchas:
 - **No export file:** check the wrapper log path printed by `run_hopper_export.sh`; increase `--timeout`.
 - **FAT archive picker appears:** rerun with `--arch arm64e`, `--arch arm64`, or `--arch x86_64` based on `file /path/to/binary`. Hopper's picker may show `AArch64e` for Apple system binaries.
 - **Empty export with an exporter error log:** inspect `<snapshot>.error.log`; a custom wrapper may have lost Hopper's injected `Document` global.
-- **MCP server path with spaces:** use `/usr/local/bin/HopperMCPServer` or the generic JSON asset that points to the symlink.
+- **MCP server path with spaces:** use the direct-path JSON/TOML assets first; if a client mishandles spaces, create a symlink such as `/usr/local/bin/HopperMCPServer` and use the symlink assets.
 - **Automation prompt blocked the run:** open System Settings and allow the terminal, agent host process, or Hopper CLI launcher to automate Hopper. In disposable VM workflows, bake that grant into the automation snapshot.
 - **Stale documents in Hopper:** close them manually or rerun the wrapper without `--keep-open`.

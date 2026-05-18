@@ -1,0 +1,12 @@
+{
+  "target": "/Applications/Target.app",
+  "include_deps": true,
+  "max_files": 2000,
+  "expected_primary_roles": [
+    "main_executable",
+    "framework_executable",
+    "xpc_service_executable",
+    "nested_app_executable"
+  ],
+  "notes": "Use scripts/inspect_macho_targets.py --include-deps TARGET before opening Hopper."
+}

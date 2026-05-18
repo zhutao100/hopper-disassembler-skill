@@ -5,13 +5,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import select
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
-DEFAULT_SERVER = "/usr/local/bin/HopperMCPServer"
+DEFAULT_SERVER_CANDIDATES = (
+    "HOPPER_MCP_SERVER",
+    "/Applications/Hopper Disassembler.app/Contents/MacOS/HopperMCPServer",
+    "/usr/local/bin/HopperMCPServer",
+)
 PROTOCOL_VERSION = "2025-03-26"
 READ_ONLY_TOOLS = {
     "list_documents",
@@ -110,9 +116,30 @@ def decode_tool_result(result: dict[str, Any]) -> Any:
         return text
 
 
+def resolve_server(explicit: str | None) -> Path:
+    if explicit:
+        return Path(explicit).expanduser()
+    for candidate in DEFAULT_SERVER_CANDIDATES:
+        if candidate.startswith("HOPPER_"):
+            value = os.environ.get(candidate)
+            if value and Path(value).expanduser().exists():
+                return Path(value).expanduser()
+            continue
+        path = Path(candidate)
+        if path.exists():
+            return path
+    path_text = shutil.which("HopperMCPServer")
+    if path_text:
+        return Path(path_text)
+    return Path(DEFAULT_SERVER_CANDIDATES[1])
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--server", default=DEFAULT_SERVER, help="HopperMCPServer path")
+    parser.add_argument(
+        "--server",
+        help="HopperMCPServer path. Defaults to HOPPER_MCP_SERVER or Hopper.app bundled server.",
+    )
     parser.add_argument("--timeout", type=float, default=10.0, help="response timeout in seconds")
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
     parser.add_argument(
@@ -156,7 +183,7 @@ def main() -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    server = Path(args.server)
+    server = resolve_server(args.server)
     if not server.exists():
         print(f"error: Hopper MCP server not found: {server}", file=sys.stderr)
         return 2

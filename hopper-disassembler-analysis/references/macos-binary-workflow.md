@@ -4,19 +4,30 @@ Use this reference when the target is a macOS app bundle, command-line tool, fra
 
 ## Contents
 
-- [1. Resolve Targets](#1-resolve-targets)
-- [2. Capture Baseline Metadata Outside Hopper](#2-capture-baseline-metadata-outside-hopper)
-- [3. Export Hopper Evidence](#3-export-hopper-evidence)
-- [4. Read and Triage the Snapshot](#4-read-and-triage-the-snapshot)
-- [5. Correlate With Source When Available](#5-correlate-with-source-when-available)
-- [6. Language-Specific Source Correlation](#6-language-specific-source-correlation)
-- [7. Triage Procedure Sets](#7-triage-procedure-sets)
-- [8. Reporting Rules](#8-reporting-rules)
-- [9. Modification Boundary](#9-modification-boundary)
+- [macOS Binary Analysis Workflow](#macos-binary-analysis-workflow)
+  - [Contents](#contents)
+  - [1. Resolve Targets](#1-resolve-targets)
+  - [2. Capture Baseline Metadata Outside Hopper](#2-capture-baseline-metadata-outside-hopper)
+  - [3. Export Hopper Evidence](#3-export-hopper-evidence)
+  - [4. Read and Triage the Snapshot](#4-read-and-triage-the-snapshot)
+  - [5. Correlate With Source When Available](#5-correlate-with-source-when-available)
+  - [6. Language-Specific Source Correlation](#6-language-specific-source-correlation)
+  - [7. Triage Procedure Sets](#7-triage-procedure-sets)
+  - [8. Reporting Rules](#8-reporting-rules)
+  - [9. Modification Boundary](#9-modification-boundary)
 
 ## 1. Resolve Targets
 
-For `.app` bundles, identify the main executable:
+Start with the bundled inventory script:
+
+```bash
+scripts/inspect_macho_targets.py \
+  --include-deps \
+  --output /tmp/target.inventory.md \
+  /Applications/Target.app
+```
+
+Use manual resolution when scripting in a minimal shell or validating the inventory. For `.app` bundles, identify the main executable:
 
 ```bash
 app="/Applications/Target.app"
@@ -43,13 +54,19 @@ If source points to a framework or helper module, analyze that embedded Mach-O d
 
 ## 2. Capture Baseline Metadata Outside Hopper
 
+Inventory the host toolchain when the exact macOS/Xcode setup matters:
+
+```bash
+scripts/macos_toolchain_inventory.py --output /tmp/macos-toolchain.md
+```
+
 Use platform tools for cheap context before opening Hopper:
 
 ```bash
 codesign -dv --verbose=4 "$target" 2>&1
 otool -L "$target"
 nm -m "$target" 2>/dev/null | sed -n '1,120p'
-strings -a "$target" | grep -E -n "http|keychain|token|license|login|xpc|socket" | sed -n '1,80p'
+strings -a "$target" | grep -E -n "http|keychain|token|login|xpc|socket|error" | sed -n '1,80p'
 ```
 
 These outputs are not substitutes for Hopper evidence; they guide where to look.
@@ -125,6 +142,16 @@ scripts/hopper_snapshot_summary.py \
   /tmp/target.hopper-snapshot.json
 ```
 
+For focused evidence search across names, strings, procedures, and xrefs:
+
+```bash
+scripts/hopper_evidence_search.py \
+  --ignore-case \
+  --output /tmp/target.evidence.md \
+  /tmp/target.hopper-snapshot.json \
+  'FunctionOrType|UniqueString|0x100003f50'
+```
+
 ## 5. Correlate With Source When Available
 
 If the user provided source, search source and Hopper artifacts together:
@@ -193,7 +220,7 @@ Group procedures by evidence:
 - UI actions, command handlers, or menu callbacks.
 - XPC, socket, URLSession, file, Keychain, and launch service APIs.
 - Parser or deserializer routines.
-- License, auth, update, and entitlement checks.
+- Authorization, update, and entitlement checks.
 - Persistent storage and state-retention artifacts.
 
 For each candidate function, record:
@@ -227,9 +254,18 @@ workdir="$(mktemp -d /tmp/hopper-analysis.XXXXXX)"
 cp -R "/path/to/Target.app" "$workdir/"
 ```
 
-Only run Hopper write-back actions after the user explicitly asks for annotations or binary changes. Prefer comments, labels, tags, and bookmarks over byte changes unless the task specifically requires a produced executable.
+Only run Hopper write-back actions after the user explicitly asks for annotations or binary changes and the target is owned, approved for modification, or a benign lab fixture. Prefer comments, labels, tags, and bookmarks over byte changes unless the task specifically requires a produced executable.
 
-Universal Mach-O patching requires per-slice work:
+Universal Mach-O patching requires per-slice work. Prefer the generated workspace:
+
+```bash
+scripts/macho_universal_workspace.py \
+  --sign-ad-hoc \
+  --output-dir /tmp/target.macho-workspace \
+  /path/to/Target.app
+```
+
+Manual equivalent:
 
 ```bash
 workdir="$(mktemp -d /tmp/hopper-patch.XXXXXX)"
@@ -240,4 +276,4 @@ lipo -create "$workdir/Target.arm64.patched" "$workdir/Target.x86_64.patched" -o
 codesign --force --sign - "$workdir/Target"
 ```
 
-Do not assume a virtual address is always the same as a file offset. Check the selected slice's load commands with `otool -l` and account for FAT slice offsets before byte-level verification.
+Do not assume a virtual address is always the same as a file offset. Use `scripts/macho_address_map.py`, check the selected slice's load commands with `otool -l`, and account for FAT slice offsets before byte-level verification.

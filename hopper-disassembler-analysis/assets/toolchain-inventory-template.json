@@ -1,0 +1,28 @@
+{
+  "required_for_read_only_analysis": [
+    "file",
+    "lipo",
+    "otool",
+    "codesign",
+    "hopper",
+    "HopperMCPServer"
+  ],
+  "required_for_authorized_mutation": [
+    "vtool",
+    "install_name_tool",
+    "clang",
+    "lldb"
+  ],
+  "optional_cross_checks": [
+    "llvm-objdump",
+    "llvm-otool",
+    "swift-demangle",
+    "rustfilt",
+    "r2",
+    "rabin2",
+    "ghidraRun",
+    "jtool2",
+    "ipsw"
+  ],
+  "run": "scripts/macos_toolchain_inventory.py --format json --output /tmp/macos-toolchain.json"
+}

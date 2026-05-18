@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "hopper": {
+      "command": "/Applications/Hopper Disassembler.app/Contents/MacOS/HopperMCPServer",
+      "args": [],
+      "env": {}
+    }
+  }
+}

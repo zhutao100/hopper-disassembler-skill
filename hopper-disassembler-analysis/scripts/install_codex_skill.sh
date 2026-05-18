@@ -3,19 +3,30 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Usage: install_codex_skill.sh [--replace] [--target-root DIR] [--dry-run]
+Usage: install_codex_skill.sh [--replace] [--target-root DIR] [--scope user|repo|legacy-codex] [--dry-run]
 
-Install this skill folder into a Codex CLI skills directory.
+Install this skill folder into a skills directory.
 
 Defaults:
-  --target-root "${CODEX_HOME:-$HOME/.codex}/skills"
+  --scope user        -> ${AGENTS_SKILLS_HOME:-$HOME/.agents/skills}
+  --scope repo        -> .agents/skills under the current repository root when detectable
+  --scope legacy-codex -> ${CODEX_HOME:-$HOME/.codex}/skills for older Codex builds
 EOF
+}
+
+repo_root() {
+    if command -v git >/dev/null 2>&1 && git rev-parse --show-toplevel >/dev/null 2>&1; then
+        git rev-parse --show-toplevel
+    else
+        pwd -P
+    fi
 }
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 skill_dir="$(cd "${script_dir}/.." && pwd -P)"
 skill_name="$(basename "${skill_dir}")"
-target_root="${CODEX_HOME:-${HOME}/.codex}/skills"
+scope="user"
+target_root=""
 replace=0
 dry_run=0
 
@@ -27,6 +38,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --target-root)
             target_root="$2"
+            shift 2
+            ;;
+        --scope)
+            scope="$2"
             shift 2
             ;;
         --dry-run)
@@ -45,7 +60,33 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-target_root="$(mkdir -p "${target_root}" && cd "${target_root}" && pwd -P)"
+if [[ -z "${target_root}" ]]; then
+    case "${scope}" in
+        user)
+            target_root="${AGENTS_SKILLS_HOME:-${HOME}/.agents/skills}"
+            ;;
+        repo)
+            target_root="$(repo_root)/.agents/skills"
+            ;;
+        legacy-codex)
+            target_root="${CODEX_HOME:-${HOME}/.codex}/skills"
+            ;;
+        *)
+            echo "error: unsupported --scope: ${scope}" >&2
+            exit 2
+            ;;
+    esac
+fi
+
+if [[ -d "${target_root}" ]]; then
+    target_root="$(cd "${target_root}" && pwd -P)"
+elif [[ "${dry_run}" -eq 1 ]]; then
+    if [[ "${target_root}" != /* ]]; then
+        target_root="${PWD}/${target_root}"
+    fi
+else
+    target_root="$(mkdir -p "${target_root}" && cd "${target_root}" && pwd -P)"
+fi
 target="${target_root}/${skill_name}"
 
 if [[ "${skill_dir}" == "${target}" ]]; then
@@ -70,6 +111,7 @@ cleanup() {
 trap cleanup EXIT
 
 cp -R "${skill_dir}" "${tmp_dir}/"
+find "${tmp_dir}" \( -name '.DS_Store' -o -name '._*' \) -delete
 if [[ -e "${target}" ]]; then
     rm -rf "${target}"
 fi

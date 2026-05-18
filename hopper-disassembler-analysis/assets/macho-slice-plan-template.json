@@ -1,0 +1,41 @@
+{
+  "authorization": {
+    "scope_owner": "",
+    "target": "",
+    "allowed_architectures": ["arm64"],
+    "allowed_change_classes": [],
+    "out_of_scope": []
+  },
+  "baseline": {
+    "sha256": "",
+    "file": "",
+    "lipo_archs": [],
+    "codesign_summary": [],
+    "hopper_version": "",
+    "hopper_slice": ""
+  },
+  "planned_changes": [
+    {
+      "arch": "arm64",
+      "hopper_virtual_address": "0x0",
+      "slice_relative_file_offset": "0x0",
+      "absolute_file_offset_in_universal": "0x0",
+      "original_bytes_hex": "",
+      "new_bytes_hex": "",
+      "instruction_before": "",
+      "instruction_after": "",
+      "reason": "",
+      "review_status": "pending"
+    }
+  ],
+  "rebuild": {
+    "workspace": "",
+    "recombine_command": "./recombine.sh",
+    "signing_identity": "-",
+    "validation_commands": [
+      "file rebuilt/<binary>",
+      "lipo -archs rebuilt/<binary>",
+      "codesign --verify --strict --verbose=4 rebuilt/<binary>"
+    ]
+  }
+}

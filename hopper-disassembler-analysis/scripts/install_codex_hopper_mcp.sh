@@ -7,12 +7,41 @@ Usage: install_codex_hopper_mcp.sh [--replace] [--name NAME] [--server PATH]
 
 Probe Hopper's bundled MCP server and register it with Codex CLI using:
   codex mcp add NAME -- PATH
+
+Defaults to HOPPER_MCP_SERVER, Hopper.app's bundled server, or /usr/local/bin/HopperMCPServer.
 EOF
+}
+
+resolve_server() {
+    local explicit="$1"
+    local candidate
+    if [[ -n "${explicit}" ]]; then
+        printf '%s\n' "${explicit}"
+        return 0
+    fi
+    if [[ -n "${HOPPER_MCP_SERVER:-}" && -x "${HOPPER_MCP_SERVER}" ]]; then
+        printf '%s\n' "${HOPPER_MCP_SERVER}"
+        return 0
+    fi
+    for candidate in \
+        "/Applications/Hopper Disassembler.app/Contents/MacOS/HopperMCPServer" \
+        "/usr/local/bin/HopperMCPServer"; do
+        if [[ -x "${candidate}" ]]; then
+            printf '%s\n' "${candidate}"
+            return 0
+        fi
+    done
+    candidate="$(command -v HopperMCPServer 2>/dev/null || true)"
+    if [[ -n "${candidate}" && -x "${candidate}" ]]; then
+        printf '%s\n' "${candidate}"
+        return 0
+    fi
+    printf '%s\n' "/Applications/Hopper Disassembler.app/Contents/MacOS/HopperMCPServer"
 }
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 name="hopper"
-server="/usr/local/bin/HopperMCPServer"
+server=""
 replace=0
 
 while [[ $# -gt 0 ]]; do
@@ -41,14 +70,10 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+server="$(resolve_server "${server}")"
 if [[ ! -x "${server}" ]]; then
-    app_server="/Applications/Hopper Disassembler.app/Contents/MacOS/HopperMCPServer"
-    if [[ -x "${app_server}" ]]; then
-        server="${app_server}"
-    else
-        echo "error: HopperMCPServer not executable: ${server}" >&2
-        exit 2
-    fi
+    echo "error: HopperMCPServer not executable: ${server}" >&2
+    exit 2
 fi
 
 python3 "${script_dir}/hopper_mcp_probe.py" --server "${server}" --call-tool none >/dev/null

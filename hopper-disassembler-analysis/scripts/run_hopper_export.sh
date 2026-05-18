@@ -9,7 +9,7 @@ Open a target in Hopper and run hopper_export_snapshot.py against it.
 
 Options:
   -o, --output PATH             Output JSON path. Default: ./<target>.hopper-snapshot.json
-      --hopper PATH             Hopper CLI path. Default: /usr/local/bin/hopper
+      --hopper PATH             Hopper CLI path. Default: HOPPER_CLI, PATH hopper, or Hopper.app bundled CLI
       --arch auto|arm64|arm64e|x86_64
                                   FAT Mach-O architecture. Default: auto
       --timeout SECONDS         Wait limit for export file. Default: 180
@@ -49,6 +49,28 @@ abs_path() {
     printf '%s/%s\n' "$(cd "${dir}" && pwd -P)" "${base}"
 }
 
+find_hopper_cli() {
+    local candidate
+    if [[ -n "${HOPPER_CLI:-}" && -x "${HOPPER_CLI}" ]]; then
+        printf '%s\n' "${HOPPER_CLI}"
+        return 0
+    fi
+    candidate="$(command -v hopper 2>/dev/null || true)"
+    if [[ -n "${candidate}" && -x "${candidate}" ]]; then
+        printf '%s\n' "${candidate}"
+        return 0
+    fi
+    for candidate in \
+        "/Applications/Hopper Disassembler.app/Contents/MacOS/hopper" \
+        "/usr/local/bin/hopper"; do
+        if [[ -x "${candidate}" ]]; then
+            printf '%s\n' "${candidate}"
+            return 0
+        fi
+    done
+    return 1
+}
+
 resolve_target() {
     local target="$1"
     if [[ -d "${target}" && "${target}" == *.app ]]; then
@@ -66,7 +88,7 @@ resolve_target() {
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 exporter="${script_dir}/hopper_export_snapshot.py"
-hopper_bin="/usr/local/bin/hopper"
+hopper_bin=""
 arch="auto"
 timeout_seconds=180
 output=""
@@ -189,8 +211,11 @@ if [[ $# -ne 1 ]]; then
 fi
 
 target="$(resolve_target "$1")"
-if [[ ! -x "${hopper_bin}" ]]; then
-    echo "error: Hopper CLI not executable: ${hopper_bin}" >&2
+if [[ -z "${hopper_bin}" ]]; then
+    hopper_bin="$(find_hopper_cli || true)"
+fi
+if [[ -z "${hopper_bin}" || ! -x "${hopper_bin}" ]]; then
+    echo "error: Hopper CLI not found. Set --hopper PATH or HOPPER_CLI." >&2
     exit 2
 fi
 if [[ ! -f "${exporter}" ]]; then
