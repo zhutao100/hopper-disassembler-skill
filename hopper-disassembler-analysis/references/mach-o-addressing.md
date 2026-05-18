@@ -28,12 +28,14 @@ Map both ways:
 ```bash
 scripts/macho_address_map.py --arch arm64 --address 0x100003f50 /path/to/target
 scripts/macho_address_map.py --arch arm64 --offset 0x3f50 /path/to/target
+scripts/macho_address_map.py --queries-only --arch arm64 --address 0x100003f50 /path/to/target
 ```
 
 JSON output for automation:
 
 ```bash
 scripts/macho_address_map.py --format json --arch arm64 --address 0x100003f50 /path/to/target > /tmp/address-map.json
+scripts/macho_address_map.py --format json --queries-only --arch arm64 --address 0x100003f50 /path/to/target > /tmp/address-map.compact.json
 ```
 
 For universal files, specify `--arch` unless you intentionally want all slices:

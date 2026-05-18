@@ -93,6 +93,7 @@ Use Hopper as an evidence source for authorized local binary analysis. Prefer de
    ```bash
    scripts/macho_address_map.py \
      --arch arm64 \
+     --queries-only \
      --address 0x100003f50 \
      --offset 0x3f50 \
      /path/to/target
@@ -120,7 +121,7 @@ Use Hopper as an evidence source for authorized local binary analysis. Prefer de
      /path/to/Target.app
    ```
 
-   Put reviewed modified thin slices in `patched/`, run the generated `recombine.sh`, and re-sign according to the authorized test/distribution path. Use `assets/authorized-mutation-checklist.md` and `assets/macho-slice-plan-template.json` for change review.
+   Put reviewed modified thin slices in `patched/`, run the generated `recombine.sh`, and use `install_rebuilt_into_app.sh` only for disposable app copies. Re-sign according to the authorized test/distribution path. Use `assets/authorized-mutation-checklist.md` and `assets/macho-slice-plan-template.json` for change review.
 
 8. Report with reproducibility.
 
@@ -130,8 +131,8 @@ Use Hopper as an evidence source for authorized local binary analysis. Prefer de
 
 - `scripts/macos_toolchain_inventory.py`: Inventory built-in and popular macOS binary-analysis/mutation tools.
 - `scripts/inspect_macho_targets.py`: Inventory app-bundle and Mach-O analysis targets before Hopper runs.
-- `scripts/macho_address_map.py`: Parse thin/universal Mach-O files and map virtual addresses to slice-relative and absolute file offsets.
-- `scripts/macho_universal_workspace.py`: Create a copy-only universal-slice workspace with metadata capture and a generated recombine script.
+- `scripts/macho_address_map.py`: Parse thin/universal Mach-O files and map virtual addresses to slice-relative and absolute file offsets; use `--queries-only` for compact LLM-facing output.
+- `scripts/macho_universal_workspace.py`: Create a copy-only universal-slice workspace with compact plan metadata, full metadata files, generated recombine script, and app-copy install helper.
 - `scripts/run_hopper_export.sh`: Open a binary or `.app` in Hopper, run the bundled exporter, optionally write a compact Markdown summary, and close the throwaway Hopper document by default.
 - `scripts/hopper_export_snapshot.py`: Hopper Python script that exports metadata, segments, sections, strings with bounded xrefs, names, procedures, call refs, basic blocks, sampled instructions, comments, tags, file offsets, and bounded optional pseudocode.
 - `scripts/hopper_snapshot_summary.py`: Summarize a snapshot as compact Markdown or compact JSON, with optional regex filtering.

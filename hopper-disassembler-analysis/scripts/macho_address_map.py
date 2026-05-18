@@ -501,34 +501,46 @@ def render_markdown(payload: dict[str, Any]) -> str:
     lines: list[str] = ["# Mach-O Address Map", ""]
     lines.append(f"- Path: `{payload['path']}`")
     lines.append(f"- Universal: `{payload['universal']}`")
-    lines.append("")
-    lines.append("## Slices")
-    lines.append("")
-    for sl in payload["slices"]:
-        lines.append(f"### `{sl['arch']}`")
-        lines.append(f"- Slice offset: `{sl['slice_offset']}`")
-        lines.append(f"- Slice size: `{sl['slice_size']}`")
-        lines.append(f"- Bits/endian: `{sl['bits']}` / `{sl['endian']}`")
-        if sl.get("build_versions"):
-            lines.append(f"- Build versions: `{json.dumps(sl['build_versions'], sort_keys=True)}`")
-        if sl.get("version_min"):
-            lines.append(f"- Minimum versions: `{json.dumps(sl['version_min'], sort_keys=True)}`")
-        if sl.get("code_signature"):
-            lines.append(f"- Code signature: `{json.dumps(sl['code_signature'], sort_keys=True)}`")
-        if sl.get("chained_fixups"):
-            lines.append(f"- Chained fixups: `{json.dumps(sl['chained_fixups'], sort_keys=True)}`")
-        lines.append("- Segments:")
-        for segment in sl["segments"]:
-            lines.append(
-                f"  - `{segment['name']}` vm `{segment['vmaddr']}`+`{segment['vmsize']}` "
-                f"file `{segment['fileoff']}`+`{segment['filesize']}`"
-            )
-        if sl.get("warnings"):
-            lines.append("- Warnings:")
-            for warning in sl["warnings"]:
-                lines.append(f"  - {warning}")
+    if payload.get("architectures"):
+        lines.append(f"- Architectures: `{', '.join(payload['architectures'])}`")
+    if payload["slices"]:
         lines.append("")
+        lines.append("## Slices")
+        lines.append("")
+        for sl in payload["slices"]:
+            lines.append(f"### `{sl['arch']}`")
+            lines.append(f"- Slice offset: `{sl['slice_offset']}`")
+            lines.append(f"- Slice size: `{sl['slice_size']}`")
+            lines.append(f"- Bits/endian: `{sl['bits']}` / `{sl['endian']}`")
+            if sl.get("build_versions"):
+                lines.append(
+                    f"- Build versions: `{json.dumps(sl['build_versions'], sort_keys=True)}`"
+                )
+            if sl.get("version_min"):
+                lines.append(
+                    f"- Minimum versions: `{json.dumps(sl['version_min'], sort_keys=True)}`"
+                )
+            if sl.get("code_signature"):
+                lines.append(
+                    f"- Code signature: `{json.dumps(sl['code_signature'], sort_keys=True)}`"
+                )
+            if sl.get("chained_fixups"):
+                lines.append(
+                    f"- Chained fixups: `{json.dumps(sl['chained_fixups'], sort_keys=True)}`"
+                )
+            lines.append("- Segments:")
+            for segment in sl["segments"]:
+                lines.append(
+                    f"  - `{segment['name']}` vm `{segment['vmaddr']}`+`{segment['vmsize']}` "
+                    f"file `{segment['fileoff']}`+`{segment['filesize']}`"
+                )
+            if sl.get("warnings"):
+                lines.append("- Warnings:")
+                for warning in sl["warnings"]:
+                    lines.append(f"  - {warning}")
+            lines.append("")
     if payload.get("queries"):
+        lines.append("")
         lines.append("## Queries")
         lines.append("")
         for query in payload["queries"]:
@@ -572,6 +584,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--include-sections", action="store_true", help="Include section rows in JSON output."
     )
+    parser.add_argument(
+        "--queries-only",
+        action="store_true",
+        help="Omit slice segment details and print only architecture names plus query matches.",
+    )
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
     parser.add_argument(
         "-o", "--output", type=Path, help="Write output to this path instead of stdout"
@@ -583,7 +600,11 @@ def main() -> int:
     args = parse_args()
     try:
         universal, slices = parse_file(args.target.expanduser())
-        serialized = [serialize_slice(sl, include_sections=args.include_sections) for sl in slices]
+        serialized = (
+            []
+            if args.queries_only
+            else [serialize_slice(sl, include_sections=args.include_sections) for sl in slices]
+        )
         queries: list[dict[str, Any]] = []
         for value in args.address:
             address = parse_int(value)
@@ -606,6 +627,7 @@ def main() -> int:
         payload = {
             "path": str(args.target.expanduser()),
             "universal": universal,
+            "architectures": [sl.arch for sl in slices],
             "slices": serialized,
             "queries": queries,
         }

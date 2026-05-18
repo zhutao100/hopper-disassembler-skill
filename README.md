@@ -106,6 +106,7 @@ Map Hopper addresses to file offsets:
 ```bash
 hopper-disassembler-analysis/scripts/macho_address_map.py \
   --arch arm64 \
+  --queries-only \
   --address 0x100003f50 \
   /path/to/target
 ```
@@ -118,6 +119,8 @@ hopper-disassembler-analysis/scripts/macho_universal_workspace.py \
   --output-dir /tmp/target.macho-workspace \
   /path/to/Target.app
 ```
+
+For app-bundle inputs, modify copied slices under `patched/`, run `recombine.sh`, then use the generated `install_rebuilt_into_app.sh` only against a disposable app copy.
 
 Probe Hopper MCP:
 

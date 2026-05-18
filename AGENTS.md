@@ -32,7 +32,7 @@ On a macOS host with Hopper installed, also run:
 hopper-disassembler-analysis/scripts/hopper_mcp_probe.py --json --call-tool none
 hopper-disassembler-analysis/scripts/macos_toolchain_inventory.py --output /tmp/macos-toolchain.md
 hopper-disassembler-analysis/scripts/inspect_macho_targets.py --include-deps --output /tmp/echo.inventory.md /bin/echo
-hopper-disassembler-analysis/scripts/macho_address_map.py --address 0x100000000 /bin/echo >/tmp/echo.address-map.txt || true
+hopper-disassembler-analysis/scripts/macho_address_map.py --queries-only --address 0x100000000 /bin/echo >/tmp/echo.address-map.txt || true
 hopper-disassembler-analysis/scripts/run_hopper_export.sh \
   --timeout 180 \
   --procedure-pattern 'EntryPoint|sub_' \

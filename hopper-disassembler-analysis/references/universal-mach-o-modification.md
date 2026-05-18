@@ -38,17 +38,22 @@ The workspace contains:
 WORKFLOW.md
 plan.json
 recombine.sh
+install_rebuilt_into_app.sh
 original/
 slices/
 patched/
+rebuilt/
 metadata/
 ```
 
 - `original/`: copied original executable.
 - `slices/`: extracted thin slices when `lipo` is available, or copied thin input when applicable.
 - `patched/`: put reviewed modified thin slices here using the names described in `WORKFLOW.md`.
-- `metadata/`: baseline `file`, `lipo`, `otool`, `vtool`, `codesign`, and address-map output when available.
-- `recombine.sh`: generated script that recombines patched slices or copies a patched thin file to `out/`.
+- `rebuilt/`: output directory for `recombine.sh`.
+- `metadata/`: full baseline `file`, `lipo`, `otool`, `vtool`, and `codesign` output.
+- `plan.json`: compact command log previews plus paths to full metadata files.
+- `recombine.sh`: generated script that recombines patched slices or copies a patched thin file to `rebuilt/`.
+- `install_rebuilt_into_app.sh`: for `.app` inputs, installs `rebuilt/<binary>` into the input app bundle. Run it only when the input is a disposable app copy.
 
 ## Manual Universal Workflow
 

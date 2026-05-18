@@ -2,9 +2,9 @@
 """Create a safe workspace for authorized universal Mach-O slice analysis/mutation.
 
 The script copies the target executable, extracts requested thin slices with
-`lipo`, captures baseline metadata, and writes a ready-to-run recombine script.
-It does not patch bytes; use Hopper or other reviewed tooling on the copied thin
-slices only.
+`lipo`, captures full baseline metadata as files, writes compact plan previews,
+and writes ready-to-run helper scripts. It does not patch bytes; use Hopper or
+other reviewed tooling on the copied thin slices only.
 """
 
 from __future__ import annotations
@@ -21,6 +21,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+MAX_COMMAND_LOG_CHARS = 1200
+
 
 @dataclass
 class CommandLog:
@@ -29,6 +31,11 @@ class CommandLog:
     stdout: str = ""
     stderr: str = ""
     error: str = ""
+    stdout_bytes: int = 0
+    stderr_bytes: int = 0
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
+    output_file: str | None = None
 
 
 @dataclass
@@ -58,7 +65,40 @@ def run(argv: list[str], timeout: float = 30.0) -> CommandLog:
             stderr=exc.stderr or "",
             error=f"timed out after {timeout:g}s",
         )
-    return CommandLog(argv, proc.returncode, proc.stdout.strip(), proc.stderr.strip())
+    stdout = proc.stdout.strip()
+    stderr = proc.stderr.strip()
+    return CommandLog(
+        argv,
+        proc.returncode,
+        stdout,
+        stderr,
+        stdout_bytes=len(stdout.encode("utf-8")),
+        stderr_bytes=len(stderr.encode("utf-8")),
+    )
+
+
+def compact_text(text: str, limit: int = MAX_COMMAND_LOG_CHARS) -> tuple[str, bool]:
+    if len(text) <= limit:
+        return text, False
+    omitted = len(text) - limit
+    return f"{text[:limit]}\n...[truncated {omitted} chars]", True
+
+
+def compact_command_log(result: CommandLog, *, output_file: Path | None = None) -> CommandLog:
+    stdout, stdout_truncated = compact_text(result.stdout)
+    stderr, stderr_truncated = compact_text(result.stderr)
+    return CommandLog(
+        command=result.command,
+        returncode=result.returncode,
+        stdout=stdout,
+        stderr=stderr,
+        error=result.error,
+        stdout_bytes=result.stdout_bytes or len(result.stdout.encode("utf-8")),
+        stderr_bytes=result.stderr_bytes or len(result.stderr.encode("utf-8")),
+        stdout_truncated=stdout_truncated,
+        stderr_truncated=stderr_truncated,
+        output_file=str(output_file) if output_file else None,
+    )
 
 
 def resolve_app_executable(path: Path) -> Path:
@@ -129,7 +169,7 @@ def capture_metadata(binary: Path, metadata_dir: Path, plan: WorkspacePlan) -> N
         out_path = metadata_dir / filename
         write_command_output(out_path, result)
         plan.metadata_files.append(str(out_path))
-        plan.commands.append(result)
+        plan.commands.append(compact_command_log(result, output_file=out_path))
 
 
 def shell_array(values: list[str]) -> str:
@@ -171,6 +211,55 @@ else
 fi
 {sign_block}file "${{out}}"
 echo "rebuilt ${{out}}"
+""",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    return script
+
+
+def write_install_app_script(
+    workspace: Path, base: str, app_path: Path, executable_path: Path, sign: bool
+) -> Path:
+    script = workspace / "install_rebuilt_into_app.sh"
+    sign_block = (
+        """
+if [[ -n "${ENTITLEMENTS_PLIST:-}" ]]; then
+    codesign --force --sign - --entitlements "${ENTITLEMENTS_PLIST}" "${app_path}"
+else
+    codesign --force --sign - "${app_path}"
+fi
+codesign --verify --deep --strict --verbose=2 "${app_path}"
+"""
+        if sign
+        else """
+echo "installed rebuilt executable; sign and verify the app bundle before launch"
+"""
+    )
+    script.write_text(
+        f"""#!/usr/bin/env bash
+set -euo pipefail
+script_dir="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd -P)"
+base={json.dumps(base)}
+app_path={json.dumps(str(app_path))}
+executable_path={json.dumps(str(executable_path))}
+rebuilt="${{script_dir}}/rebuilt/${{base}}"
+if [[ "${{app_path}}" == /Applications/* && "${{ALLOW_INSTALLED_APP_WRITE:-0}}" != "1" ]]; then
+    echo "error: refusing to install into /Applications without ALLOW_INSTALLED_APP_WRITE=1" >&2
+    echo "use a disposable app copy for mutation experiments" >&2
+    exit 2
+fi
+if [[ ! -f "${{rebuilt}}" ]]; then
+    echo "error: rebuilt executable not found: ${{rebuilt}}" >&2
+    echo "run ./recombine.sh first" >&2
+    exit 2
+fi
+if [[ ! -d "${{app_path}}" ]]; then
+    echo "error: app bundle not found: ${{app_path}}" >&2
+    exit 2
+fi
+install -m 755 "${{rebuilt}}" "${{executable_path}}"
+{sign_block}echo "installed ${{rebuilt}} -> ${{executable_path}}"
 """,
         encoding="utf-8",
     )
@@ -229,12 +318,29 @@ def write_workflow(plan: WorkspacePlan, sign: bool) -> None:
     lines.append("```bash")
     lines.append("./recombine.sh")
     lines.append("```")
+    if "install_app" in plan.scripts:
+        lines.append("")
+        lines.append("## Install Into App Copy")
+        lines.append(
+            "For `.app` inputs, install the rebuilt executable into the input app bundle only when that input is a disposable copy:"
+        )
+        lines.append("")
+        lines.append("```bash")
+        lines.append("./install_rebuilt_into_app.sh")
+        lines.append("```")
+        if sign:
+            lines.append("")
+            lines.append(
+                "Set `ENTITLEMENTS_PLIST=/path/to/entitlements.plist` when the local test signature needs explicit entitlements."
+            )
     lines.append("")
     lines.append("## Address Mapping")
     lines.append("Use the skill’s address mapper against the original or rebuilt file:")
     lines.append("")
     lines.append("```bash")
-    lines.append("scripts/macho_address_map.py --arch arm64 --address 0x100000000 /path/to/binary")
+    lines.append(
+        "scripts/macho_address_map.py --queries-only --arch arm64 --address 0x100000000 /path/to/binary"
+    )
     lines.append("```")
     lines.append("")
     lines.append("## Notes")
@@ -281,7 +387,7 @@ def create_workspace(args: argparse.Namespace) -> WorkspacePlan:
         metadata_files=[],
         scripts={},
         notes=[],
-        commands=[arch_cmd],
+        commands=[compact_command_log(arch_cmd)],
     )
     if len(detected_archs) <= 1:
         plan.notes.append(
@@ -293,7 +399,7 @@ def create_workspace(args: argparse.Namespace) -> WorkspacePlan:
         )
     if input_path.is_dir() and input_path.suffix == ".app":
         plan.notes.append(
-            "Input was an app bundle. Rebuilt executable is not installed back into the bundle automatically; copy it into a disposable app copy before testing."
+            "Input was an app bundle. Rebuilt executable is not installed automatically; use install_rebuilt_into_app.sh only for disposable app copies."
         )
 
     for arch in archs:
@@ -304,7 +410,7 @@ def create_workspace(args: argparse.Namespace) -> WorkspacePlan:
             result = run(
                 ["lipo", "-thin", arch, str(original_copy), "-output", str(out)], timeout=60.0
             )
-            plan.commands.append(result)
+            plan.commands.append(compact_command_log(result))
             if result.returncode != 0:
                 raise ValueError(
                     f"failed to extract {arch}: {result.stderr or result.stdout or result.error}"
@@ -317,6 +423,11 @@ def create_workspace(args: argparse.Namespace) -> WorkspacePlan:
     capture_metadata(original_copy, workspace / "metadata", plan)
     recombine = write_recombine_script(workspace, base, archs, sign=args.sign_ad_hoc)
     plan.scripts["recombine"] = str(recombine)
+    if input_path.is_dir() and input_path.suffix == ".app":
+        install_app = write_install_app_script(
+            workspace, base, input_path, binary, sign=args.sign_ad_hoc
+        )
+        plan.scripts["install_app"] = str(install_app)
     write_workflow(plan, sign=args.sign_ad_hoc)
     plan.scripts["workflow"] = str(workspace / "WORKFLOW.md")
     (workspace / "plan.json").write_text(
