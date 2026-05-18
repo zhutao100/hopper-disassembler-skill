@@ -121,7 +121,13 @@ Use Hopper as an evidence source for authorized local binary analysis. Prefer de
      /path/to/Target.app
    ```
 
-   Put reviewed modified thin slices in `patched/`, run the generated `recombine.sh`, and use `install_rebuilt_into_app.sh` only for disposable app copies. Re-sign according to the authorized test/distribution path. Use `assets/authorized-mutation-checklist.md` and `assets/macho-slice-plan-template.json` for change review.
+   Copy target slices into `patched/`, make those copies writable, run the generated `recombine.sh`, and install only into a disposable app copy:
+
+   ```bash
+   APP_COPY_PATH=/tmp/Target.app /tmp/target.macho-workspace/install_rebuilt_into_app.sh
+   ```
+
+   For local ad-hoc app signatures, use local test entitlements only; do not preserve production team, application-identifier, iCloud, or push entitlements. Use `assets/authorized-mutation-checklist.md` and `assets/macho-slice-plan-template.json` for change review.
 
 8. Report with reproducibility.
 

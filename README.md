@@ -120,7 +120,13 @@ hopper-disassembler-analysis/scripts/macho_universal_workspace.py \
   /path/to/Target.app
 ```
 
-For app-bundle inputs, modify copied slices under `patched/`, run `recombine.sh`, then use the generated `install_rebuilt_into_app.sh` only against a disposable app copy.
+For app-bundle inputs, modify writable copies under `patched/`, run `recombine.sh`, then install into a disposable app copy:
+
+```bash
+APP_COPY_PATH=/tmp/Target.app /tmp/target.macho-workspace/install_rebuilt_into_app.sh
+```
+
+For local ad-hoc app signatures, use local test entitlements only; do not preserve production team, application-identifier, iCloud, or push entitlements.
 
 Probe Hopper MCP:
 

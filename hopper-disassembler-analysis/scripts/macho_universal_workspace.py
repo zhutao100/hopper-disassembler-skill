@@ -46,6 +46,7 @@ class WorkspacePlan:
     original_copy: str
     architectures: list[str]
     slices: dict[str, str]
+    slice_info: dict[str, dict[str, Any]]
     metadata_files: list[str]
     scripts: dict[str, str]
     notes: list[str] = field(default_factory=list)
@@ -123,6 +124,44 @@ def lipo_archs(path: Path) -> tuple[list[str], CommandLog]:
     if result.returncode == 0 and result.stdout:
         return result.stdout.split(), result
     return [], result
+
+
+def parse_lipo_detailed_info(text: str) -> dict[str, dict[str, Any]]:
+    rows: dict[str, dict[str, Any]] = {}
+    current: dict[str, Any] | None = None
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if line.startswith("architecture "):
+            arch = line.split(None, 1)[1]
+            current = {"arch": arch}
+            rows[arch] = current
+            continue
+        if current is None:
+            continue
+        if line.startswith("cputype "):
+            current["cputype"] = line.split(None, 1)[1]
+        elif line.startswith("cpusubtype "):
+            current["cpusubtype"] = line.split(None, 1)[1]
+        elif line.startswith("capabilities "):
+            current["capabilities"] = line.split(None, 1)[1]
+        elif line.startswith("offset "):
+            value = int(line.split()[1], 10)
+            current["source_offset"] = value
+            current["source_offset_hex"] = hex(value)
+        elif line.startswith("size "):
+            value = int(line.split()[1], 10)
+            current["source_size"] = value
+            current["source_size_hex"] = hex(value)
+        elif line.startswith("align "):
+            current["align"] = line.split(None, 1)[1]
+    return rows
+
+
+def lipo_slice_metadata(path: Path) -> dict[str, dict[str, Any]]:
+    result = run(["lipo", "-detailed_info", str(path)])
+    if result.returncode != 0:
+        return {}
+    return parse_lipo_detailed_info(result.stdout)
 
 
 def safe_name(path: Path) -> str:
@@ -210,6 +249,7 @@ else
     lipo -create "${{inputs[@]}}" -output "${{out}}"
 fi
 {sign_block}file "${{out}}"
+lipo -detailed_info "${{out}}" || true
 echo "rebuilt ${{out}}"
 """,
         encoding="utf-8",
@@ -222,13 +262,19 @@ def write_install_app_script(
     workspace: Path, base: str, app_path: Path, executable_path: Path, sign: bool
 ) -> Path:
     script = workspace / "install_rebuilt_into_app.sh"
+    try:
+        executable_rel = executable_path.relative_to(app_path)
+    except ValueError:
+        executable_rel = Path("Contents") / "MacOS" / base
     sign_block = (
         """
+codesign_args=(--force --deep --options runtime --sign -)
 if [[ -n "${ENTITLEMENTS_PLIST:-}" ]]; then
-    codesign --force --sign - --entitlements "${ENTITLEMENTS_PLIST}" "${app_path}"
+    codesign_args+=(--entitlements "${ENTITLEMENTS_PLIST}")
 else
-    codesign --force --sign - "${app_path}"
+    echo "using ad-hoc app signature without explicit entitlements"
 fi
+codesign "${codesign_args[@]}" "${app_path}"
 codesign --verify --deep --strict --verbose=2 "${app_path}"
 """
         if sign
@@ -241,12 +287,15 @@ echo "installed rebuilt executable; sign and verify the app bundle before launch
 set -euo pipefail
 script_dir="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd -P)"
 base={json.dumps(base)}
-app_path={json.dumps(str(app_path))}
-executable_path={json.dumps(str(executable_path))}
+default_app_path={json.dumps(str(app_path))}
+executable_rel={json.dumps(str(executable_rel))}
+app_path="${{APP_COPY_PATH:-${{default_app_path}}}}"
+executable_path="${{app_path}}/${{executable_rel}}"
 rebuilt="${{script_dir}}/rebuilt/${{base}}"
 if [[ "${{app_path}}" == /Applications/* && "${{ALLOW_INSTALLED_APP_WRITE:-0}}" != "1" ]]; then
     echo "error: refusing to install into /Applications without ALLOW_INSTALLED_APP_WRITE=1" >&2
     echo "use a disposable app copy for mutation experiments" >&2
+    echo "example: APP_COPY_PATH=/tmp/Target.app ./install_rebuilt_into_app.sh" >&2
     exit 2
 fi
 if [[ ! -f "${{rebuilt}}" ]]; then
@@ -256,6 +305,10 @@ if [[ ! -f "${{rebuilt}}" ]]; then
 fi
 if [[ ! -d "${{app_path}}" ]]; then
     echo "error: app bundle not found: ${{app_path}}" >&2
+    exit 2
+fi
+if [[ ! -f "${{executable_path}}" ]]; then
+    echo "error: app executable not found: ${{executable_path}}" >&2
     exit 2
 fi
 install -m 755 "${{rebuilt}}" "${{executable_path}}"
@@ -291,7 +344,16 @@ def write_workflow(plan: WorkspacePlan, sign: bool) -> None:
     lines.append("")
     lines.append("## Slice Files")
     for arch, path in plan.slices.items():
-        lines.append(f"- `{arch}`: `{path}`")
+        info = plan.slice_info.get(arch, {})
+        source_offset = info.get("source_offset_hex")
+        source_size = info.get("source_size_hex")
+        details = []
+        if source_offset:
+            details.append(f"source offset `{source_offset}`")
+        if source_size:
+            details.append(f"source size `{source_size}`")
+        suffix = f" ({', '.join(details)})" if details else ""
+        lines.append(f"- `{arch}`: `{path}`{suffix}")
     lines.append("")
     lines.append("## Recommended Flow")
     lines.append(
@@ -301,7 +363,7 @@ def write_workflow(plan: WorkspacePlan, sign: bool) -> None:
         "2. Record the Hopper architecture, procedure address, file offset, original bytes, changed bytes, and rationale."
     )
     lines.append(
-        "3. Produce the reviewed modified executable into `patched/` using the same `<binary>.<arch>` name."
+        "3. Copy the target slice into `patched/`, make it writable, then produce the reviewed modified executable using the same `<binary>.<arch>` name."
     )
     lines.append("4. Repeat for each architecture that must preserve identical behavior.")
     lines.append("5. Run `./recombine.sh` from this workspace.")
@@ -326,12 +388,12 @@ def write_workflow(plan: WorkspacePlan, sign: bool) -> None:
         )
         lines.append("")
         lines.append("```bash")
-        lines.append("./install_rebuilt_into_app.sh")
+        lines.append("APP_COPY_PATH=/tmp/Target.app ./install_rebuilt_into_app.sh")
         lines.append("```")
         if sign:
             lines.append("")
             lines.append(
-                "Set `ENTITLEMENTS_PLIST=/path/to/entitlements.plist` when the local test signature needs explicit entitlements."
+                "Set `ENTITLEMENTS_PLIST=/path/to/entitlements.plist` when the local test signature needs explicit entitlements. For ad-hoc app tests, use local test entitlements and do not preserve production team, application-identifier, iCloud, or push entitlements."
             )
     lines.append("")
     lines.append("## Address Mapping")
@@ -367,6 +429,7 @@ def create_workspace(args: argparse.Namespace) -> WorkspacePlan:
     copy_executable(binary, original_copy, read_only=True)
 
     detected_archs, arch_cmd = lipo_archs(original_copy)
+    source_slice_info = lipo_slice_metadata(original_copy)
     archs = args.arch or detected_archs
     if not archs:
         raise ValueError(
@@ -384,6 +447,7 @@ def create_workspace(args: argparse.Namespace) -> WorkspacePlan:
         original_copy=str(original_copy),
         architectures=archs,
         slices={},
+        slice_info={},
         metadata_files=[],
         scripts={},
         notes=[],
@@ -419,6 +483,17 @@ def create_workspace(args: argparse.Namespace) -> WorkspacePlan:
         else:
             copy_executable(original_copy, out, read_only=True)
         plan.slices[arch] = str(out)
+        info = dict(source_slice_info.get(arch, {}))
+        info.setdefault("arch", arch)
+        info["path"] = str(out)
+        info["thin_size"] = out.stat().st_size
+        info["thin_size_hex"] = hex(out.stat().st_size)
+        if len(detected_archs) <= 1:
+            info.setdefault("source_offset", 0)
+            info.setdefault("source_offset_hex", "0x0")
+            info.setdefault("source_size", out.stat().st_size)
+            info.setdefault("source_size_hex", hex(out.stat().st_size))
+        plan.slice_info[arch] = info
 
     capture_metadata(original_copy, workspace / "metadata", plan)
     recombine = write_recombine_script(workspace, base, archs, sign=args.sign_ad_hoc)
@@ -444,7 +519,16 @@ def render_markdown(plan: WorkspacePlan) -> str:
     lines.append(f"- Architectures: `{', '.join(plan.architectures)}`")
     lines.append("- Slices:")
     for arch, path in plan.slices.items():
-        lines.append(f"  - `{arch}`: `{path}`")
+        info = plan.slice_info.get(arch, {})
+        details = []
+        if info.get("source_offset_hex"):
+            details.append(f"source offset `{info['source_offset_hex']}`")
+        if info.get("source_size_hex"):
+            details.append(f"source size `{info['source_size_hex']}`")
+        if info.get("thin_size_hex"):
+            details.append(f"thin size `{info['thin_size_hex']}`")
+        suffix = f" ({', '.join(details)})" if details else ""
+        lines.append(f"  - `{arch}`: `{path}`{suffix}")
     lines.append("- Scripts:")
     for name, path in plan.scripts.items():
         lines.append(f"  - `{name}`: `{path}`")

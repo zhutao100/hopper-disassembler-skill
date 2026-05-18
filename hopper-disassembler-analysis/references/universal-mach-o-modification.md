@@ -48,12 +48,20 @@ metadata/
 
 - `original/`: copied original executable.
 - `slices/`: extracted thin slices when `lipo` is available, or copied thin input when applicable.
-- `patched/`: put reviewed modified thin slices here using the names described in `WORKFLOW.md`.
+- `patched/`: put reviewed writable copies of modified thin slices here using the names described in `WORKFLOW.md`.
 - `rebuilt/`: output directory for `recombine.sh`.
 - `metadata/`: full baseline `file`, `lipo`, `otool`, `vtool`, and `codesign` output.
-- `plan.json`: compact command log previews plus paths to full metadata files.
-- `recombine.sh`: generated script that recombines patched slices or copies a patched thin file to `rebuilt/`.
-- `install_rebuilt_into_app.sh`: for `.app` inputs, installs `rebuilt/<binary>` into the input app bundle. Run it only when the input is a disposable app copy.
+- `plan.json`: compact command log previews, slice offsets/sizes, paths to copied slices, and paths to full metadata files.
+- `recombine.sh`: generated script that recombines patched slices or copies a patched thin file to `rebuilt/`, then prints `file` and `lipo -detailed_info` output.
+- `install_rebuilt_into_app.sh`: for `.app` inputs, installs `rebuilt/<binary>` into `APP_COPY_PATH` when set, otherwise the input app bundle. Use `APP_COPY_PATH` for disposable app copies.
+
+For app-copy installation:
+
+```bash
+APP_COPY_PATH=/tmp/Target.app /tmp/target.macho-workspace/install_rebuilt_into_app.sh
+```
+
+For local ad-hoc app signatures, use local test entitlements only. Do not preserve production team, application-identifier, iCloud, or push entitlements when signing with `-`.
 
 ## Manual Universal Workflow
 
@@ -65,6 +73,8 @@ cp /path/to/UniversalBinary /tmp/target-universal/original/UniversalBinary
 lipo -info /tmp/target-universal/original/UniversalBinary
 lipo -extract arm64 /tmp/target-universal/original/UniversalBinary -output /tmp/target-universal/slices/UniversalBinary.arm64
 lipo -extract x86_64 /tmp/target-universal/original/UniversalBinary -output /tmp/target-universal/slices/UniversalBinary.x86_64
+cp /tmp/target-universal/slices/UniversalBinary.arm64 /tmp/target-universal/patched/UniversalBinary.arm64
+chmod u+w /tmp/target-universal/patched/UniversalBinary.arm64
 ```
 
 Open and modify copied thin slices only. Produce new thin executables into `patched/`, then recombine:

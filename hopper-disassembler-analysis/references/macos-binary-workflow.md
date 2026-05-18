@@ -265,6 +265,14 @@ scripts/macho_universal_workspace.py \
   /path/to/Target.app
 ```
 
+For app bundles, install the rebuilt executable into a disposable copy, not the original input:
+
+```bash
+APP_COPY_PATH=/tmp/Target.app /tmp/target.macho-workspace/install_rebuilt_into_app.sh
+```
+
+For local ad-hoc app tests, sign with local test entitlements only. Do not preserve production team, application-identifier, iCloud, or push entitlements with an ad-hoc identity.
+
 Manual equivalent:
 
 ```bash
