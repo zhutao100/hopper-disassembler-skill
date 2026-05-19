@@ -12,6 +12,7 @@ Use Hopper as an evidence source for authorized local binary analysis. Prefer de
 - Keep installed apps, source checkouts, and fixtures read-only.
 - Write generated snapshots, summaries, workspaces, and rebuilt test binaries to `/tmp` unless the task requests persistent artifacts.
 - Copy targets into a throwaway workspace before annotation write-back, byte changes, load-command edits, produced executables, or patch validation.
+- For long-running or repeated analysis, avoid reopening the same binary from scratch: keep the Hopper document open for MCP follow-up, or save a reusable `.hop` database under `/tmp` and reopen it later.
 - Use a disposable VM/sandbox before running modified binaries or generated executables.
 - Treat Hopper pseudocode as a hypothesis until assembly, xrefs, imports, strings, names, or source corroborate it.
 - When source is available, analyze one narrow snippet at a time and require at least two Hopper signals before mapping source behavior to binary behavior.
@@ -74,6 +75,28 @@ Use Hopper as an evidence source for authorized local binary analysis. Prefer de
      --summary-output /tmp/target.focused-pseudo.md \
      --output /tmp/target.focused-pseudo.json \
      /path/to/target
+   ```
+
+   For costly targets that will need repeated passes, choose a reuse mode before the first Hopper run:
+
+   ```bash
+   # Leave the analyzed document open for live Hopper MCP queries.
+   scripts/run_hopper_export.sh \
+     --keep-open \
+     --summary-output /tmp/target.hopper-summary.md \
+     --output /tmp/target.hopper-snapshot.json \
+     /path/to/target
+
+   # Or save the Hopper database and reopen it on later passes.
+   scripts/run_hopper_export.sh \
+     --wait-for-analysis \
+     --save-hop /tmp/target.hop \
+     --summary-output /tmp/target.hopper-summary.md \
+     --output /tmp/target.hopper-snapshot.json \
+     /path/to/target
+   scripts/run_hopper_export.sh \
+     --database /tmp/target.hop \
+     --output /tmp/target.reuse.hopper-snapshot.json
    ```
 
 4. Search evidence before making claims.
@@ -139,13 +162,13 @@ Use Hopper as an evidence source for authorized local binary analysis. Prefer de
 - `scripts/inspect_macho_targets.py`: Inventory app-bundle and Mach-O analysis targets before Hopper runs.
 - `scripts/macho_address_map.py`: Parse thin/universal Mach-O files and map virtual addresses to slice-relative and absolute file offsets; use `--queries-only` for compact LLM-facing output.
 - `scripts/macho_universal_workspace.py`: Create a copy-only universal-slice workspace with compact plan metadata, full metadata files, generated recombine script, and app-copy install helper.
-- `scripts/run_hopper_export.sh`: Open a binary or `.app` in Hopper, run the bundled exporter, optionally write a compact Markdown summary, and close the throwaway Hopper document by default.
-- `scripts/hopper_export_snapshot.py`: Hopper Python script that exports metadata, segments, sections, strings with bounded xrefs, names, procedures, call refs, basic blocks, sampled instructions, comments, tags, file offsets, and bounded optional pseudocode.
+- `scripts/run_hopper_export.sh`: Open a binary, `.app`, or existing `.hop` database in Hopper; run the bundled exporter; optionally write a compact Markdown summary; optionally save a `.hop`; and close the throwaway Hopper document by default.
+- `scripts/hopper_export_snapshot.py`: Hopper Python script that optionally waits for analysis and saves the active database, then exports metadata, segments, sections, strings with bounded xrefs, names, procedures, call refs, basic blocks, sampled instructions, comments, tags, file offsets, and bounded optional pseudocode.
 - `scripts/hopper_snapshot_summary.py`: Summarize a snapshot as compact Markdown or compact JSON, with optional regex filtering.
 - `scripts/hopper_evidence_search.py`: Search existing snapshots for procedures, strings, names, xrefs, and comments without reopening Hopper.
 - `scripts/hopper_mcp_probe.py`: Probe Hopper's JSON-lines MCP server, list tools, inspect schemas, and call read tools with JSON arguments.
 - `scripts/install_codex_skill.sh`, `scripts/install_hopper_scripts.sh`, `scripts/install_codex_hopper_mcp.sh`: Install the skill, Hopper UI script, and Codex MCP configuration.
-- `scripts/validate_skill_repo.py`: Validate this repo layout, frontmatter, script executability, and asset syntax without external dependencies.
+- `scripts/validate_skill_repo.py`: Validate this repo layout, frontmatter, script executability, asset syntax, and orphaned bundled resources without external dependencies.
 
 ## Bundled Assets
 

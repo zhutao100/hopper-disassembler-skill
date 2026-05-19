@@ -15,11 +15,12 @@ import json
 import os
 import re
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 
 CALL_TYPE_NAMES = {
     0: "none",
@@ -502,6 +503,90 @@ def default_output_path(document: Any) -> Path:
     return Path(os.environ.get("TMPDIR", "/tmp")) / f"{safe_stem}.hopper-snapshot.json"
 
 
+def wait_for_analysis(document: Any) -> None:
+    if not env_flag("HOPPER_SKILL_WAIT_FOR_ANALYSIS", False):
+        return
+    safe_call(None, document.log, "[hopper-disassembler-analysis] waiting for background analysis")
+    print("waiting for Hopper background analysis to finish")
+    safe_call(None, document.waitForBackgroundProcessToEnd)
+
+
+def save_database(document: Any) -> Path | None:
+    save_path = env_text("HOPPER_SKILL_SAVE_DATABASE_PATH").strip()
+    if not save_path:
+        return None
+    path = Path(save_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        document.saveDocumentAt(str(path))
+    except Exception as exc:
+        print(f"Failed to save Hopper database to {path}: {exc}", file=sys.stderr)
+        raise
+    safe_call(None, document.log, f"[hopper-disassembler-analysis] saved database to {path}")
+    print(f"hopper database saved: {path}")
+    return path
+
+
+def same_existing_file(left: str, right: Path) -> bool:
+    if not left:
+        return False
+    try:
+        return Path(left).resolve(strict=True) == right.resolve(strict=True)
+    except Exception:
+        return False
+
+
+def database_path_matches(document: Any, database_path: Path) -> bool:
+    active_database_path = safe_text(safe_call("", document.getDatabaseFilePath))
+    return same_existing_file(active_database_path, database_path)
+
+
+def find_database_document(document_class: Any, database_path: Path) -> Any:
+    documents = []
+    current = safe_call(None, document_class.getCurrentDocument)
+    if current is not None:
+        documents.append(current)
+    documents.extend(safe_call([], document_class.getAllDocuments) or [])
+    for document in documents:
+        if document is not None and database_path_matches(document, database_path):
+            return document
+    return None
+
+
+def current_document() -> Any:
+    document_class = globals().get("Document")
+    if document_class is None:
+        return None
+
+    load_path = env_text("HOPPER_SKILL_LOAD_DATABASE_PATH").strip()
+    if not load_path:
+        return document_class.getCurrentDocument()
+
+    database_path = Path(load_path)
+    bootstrap_document = document_class.getCurrentDocument()
+    database_document = safe_call(None, document_class.newDocument)
+    load_host = database_document or bootstrap_document
+    if load_host is None:
+        return None
+    loaded_document = safe_call(None, load_host.loadDocumentAt, str(database_path))
+    deadline = time.monotonic() + 30
+    document = loaded_document if loaded_document is not None else load_host
+    if document is not None and not database_path_matches(document, database_path):
+        document = None
+    while document is None and time.monotonic() < deadline:
+        document = find_database_document(document_class, database_path)
+        if document is None:
+            time.sleep(0.25)
+
+    if bootstrap_document is not None and bootstrap_document is not document:
+        safe_call(None, bootstrap_document.closeDocument)
+
+    if document is None:
+        print(f"Failed to load Hopper database: {database_path}", file=sys.stderr)
+        return None
+    return document
+
+
 def collect_snapshot(document: Any) -> dict[str, Any]:
     full_export = env_flag("HOPPER_SKILL_FULL_EXPORT", False)
     high_cap = 10**9
@@ -580,19 +665,23 @@ def main() -> int:
         print("Hopper Document API is unavailable. Run this script inside Hopper.", file=sys.stderr)
         return 2
 
-    document = document_class.getCurrentDocument()
+    document = current_document()
     if document is None:
         print("No active Hopper document.", file=sys.stderr)
         return 3
 
     output = Path(os.environ.get("HOPPER_SKILL_EXPORT_PATH") or default_output_path(document))
     output.parent.mkdir(parents=True, exist_ok=True)
+    wait_for_analysis(document)
+    save_database(document)
     snapshot = collect_snapshot(document)
     output.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     safe_call(None, document.log, f"[hopper-disassembler-analysis] exported snapshot to {output}")
     print(f"hopper snapshot exported: {output}")
 
     if env_flag("HOPPER_SKILL_CLOSE_AFTER_EXPORT", False):
+        if env_text("HOPPER_SKILL_LOAD_DATABASE_PATH").strip():
+            safe_call(None, document.saveDocument)
         safe_call(None, document.closeDocument)
 
     return 0

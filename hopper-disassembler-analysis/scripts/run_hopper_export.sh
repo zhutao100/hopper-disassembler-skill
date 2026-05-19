@@ -3,12 +3,14 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Usage: run_hopper_export.sh [options] <binary-or-app>
+Usage: run_hopper_export.sh [options] <binary-app-or-hop>
 
 Open a target in Hopper and run hopper_export_snapshot.py against it.
 
 Options:
   -o, --output PATH             Output JSON path. Default: ./<target>.hopper-snapshot.json
+      --database PATH           Open an existing Hopper .hop database instead of a binary.
+      --save-hop PATH           Save the current Hopper database to PATH before closing.
       --hopper PATH             Hopper CLI path. Default: HOPPER_CLI, PATH hopper, or Hopper.app bundled CLI
       --arch auto|arm64|arm64e|x86_64
                                   FAT Mach-O architecture. Default: auto
@@ -31,6 +33,7 @@ Options:
                                   signature, address, or xref procedure text.
       --full                    Remove procedure/string/name caps.
       --include-pseudocode      Include limited pseudocode. Slower; disabled by default.
+      --wait-for-analysis       Wait for Hopper background analysis before snapshot/save.
       --keep-open               Leave the Hopper document open after export.
   -h, --help                    Show this help.
 EOF
@@ -86,12 +89,23 @@ resolve_target() {
     abs_path "${target}"
 }
 
+resolve_database() {
+    local database="$1"
+    if [[ ! -f "${database}" ]]; then
+        echo "error: Hopper database is not a file: ${database}" >&2
+        return 2
+    fi
+    abs_path "${database}"
+}
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 exporter="${script_dir}/hopper_export_snapshot.py"
 hopper_bin=""
 arch="auto"
 timeout_seconds=180
 output=""
+database=""
+save_hop=""
 max_procedures=500
 max_strings=2000
 max_names=3000
@@ -107,11 +121,20 @@ summary_filter=""
 full_export=0
 include_pseudocode=0
 close_after_export=1
+wait_for_analysis=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -o | --output)
             output="$2"
+            shift 2
+            ;;
+        --database)
+            database="$2"
+            shift 2
+            ;;
+        --save-hop)
+            save_hop="$2"
             shift 2
             ;;
         --hopper)
@@ -182,6 +205,10 @@ while [[ $# -gt 0 ]]; do
             include_pseudocode=1
             shift
             ;;
+        --wait-for-analysis)
+            wait_for_analysis=1
+            shift
+            ;;
         --keep-open)
             close_after_export=0
             shift
@@ -205,12 +232,44 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ $# -ne 1 ]]; then
+if [[ -n "${database}" ]]; then
+    if [[ $# -ne 0 ]]; then
+        echo "error: pass either --database PATH or a positional target, not both" >&2
+        usage >&2
+        exit 2
+    fi
+    target="$(resolve_database "${database}")"
+    input_mode="database"
+elif [[ $# -eq 1 && "$1" == *.hop ]]; then
+    target="$(resolve_database "$1")"
+    input_mode="database"
+elif [[ $# -eq 1 ]]; then
+    target="$(resolve_target "$1")"
+    input_mode="executable"
+else
     usage >&2
     exit 2
 fi
 
-target="$(resolve_target "$1")"
+if [[ "${input_mode}" == "database" && "${arch}" != "auto" ]]; then
+    echo "error: --arch only applies when opening executable Mach-O targets, not .hop databases" >&2
+    exit 2
+fi
+
+launch_target="${target}"
+load_database=""
+if [[ "${input_mode}" == "database" ]]; then
+    load_database="${target}"
+    # Hopper can open .hop files directly, but that path does not run -Y scripts.
+    # Launch a tiny executable, then let the exporter load the database in-process.
+    launch_target="${HOPPER_SKILL_DATABASE_BOOTSTRAP:-/bin/echo}"
+    if [[ ! -f "${launch_target}" ]]; then
+        echo "error: database bootstrap target is not a file: ${launch_target}" >&2
+        exit 2
+    fi
+    launch_target="$(abs_path "${launch_target}")"
+fi
+
 if [[ -z "${hopper_bin}" ]]; then
     hopper_bin="$(find_hopper_cli || true)"
 fi
@@ -230,8 +289,8 @@ mkdir -p "$(dirname "${output}")"
 output="$(abs_path "${output}")"
 rm -f "${output}"
 
-file_info="$(file "${target}")"
 loader_args=()
+file_info="$(file "${launch_target}")"
 if [[ "${file_info}" == *"Mach-O universal binary"* ]]; then
     case "${arch}" in
         auto)
@@ -263,12 +322,17 @@ elif [[ "${file_info}" == *"Mach-O"* ]]; then
     loader_args=(-l Mach-O)
 fi
 
+if [[ -n "${save_hop}" ]]; then
+    mkdir -p "$(dirname "${save_hop}")"
+    save_hop="$(abs_path "${save_hop}")"
+fi
+
 log_path="${TMPDIR:-/tmp}/hopper-disassembler-analysis-${$}.log"
 runner_path="${TMPDIR:-/tmp}/hopper-disassembler-analysis-${$}.py"
 rm -f "${log_path}"
 rm -f "${runner_path}"
 
-python3 - "${runner_path}" "${exporter}" "${output}" "${max_procedures}" "${max_strings}" "${max_names}" "${max_string_xrefs}" "${max_basic_blocks}" "${max_instructions_per_block}" "${max_call_refs}" "${max_pseudocode_functions}" "${max_pseudocode_chars}" "${procedure_pattern}" "${full_export}" "${include_pseudocode}" "${close_after_export}" <<'PY'
+python3 - "${runner_path}" "${exporter}" "${output}" "${max_procedures}" "${max_strings}" "${max_names}" "${max_string_xrefs}" "${max_basic_blocks}" "${max_instructions_per_block}" "${max_call_refs}" "${max_pseudocode_functions}" "${max_pseudocode_chars}" "${procedure_pattern}" "${full_export}" "${include_pseudocode}" "${close_after_export}" "${wait_for_analysis}" "${save_hop}" "${load_database}" <<'PY'
 from __future__ import annotations
 
 import sys
@@ -289,6 +353,9 @@ keys = [
     "HOPPER_SKILL_FULL_EXPORT",
     "HOPPER_SKILL_INCLUDE_PSEUDOCODE",
     "HOPPER_SKILL_CLOSE_AFTER_EXPORT",
+    "HOPPER_SKILL_WAIT_FOR_ANALYSIS",
+    "HOPPER_SKILL_SAVE_DATABASE_PATH",
+    "HOPPER_SKILL_LOAD_DATABASE_PATH",
 ]
 values = dict(zip(keys, sys.argv[4:]))
 if len(values) != len(keys):
@@ -330,7 +397,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if ! "${hopper_bin}" -a -o -f -z "${loader_args[@]}" -e "${target}" -Y "${runner_path}" >"${log_path}" 2>&1; then
+hopper_args=()
+if [[ "${input_mode}" == "database" ]]; then
+    hopper_args=(-A -O -F -Z "${loader_args[@]}" -e "${launch_target}" -Y "${runner_path}")
+else
+    hopper_args=(-a -o -f -z "${loader_args[@]}" -e "${launch_target}" -Y "${runner_path}")
+fi
+
+if ! "${hopper_bin}" "${hopper_args[@]}" >"${log_path}" 2>&1; then
     echo "error: Hopper launcher failed" >&2
     echo "Hopper log: ${log_path}" >&2
     sed -n '1,120p' "${log_path}" >&2 || true
@@ -339,6 +413,14 @@ fi
 
 deadline=$((SECONDS + timeout_seconds))
 while [[ ! -s "${output}" ]]; do
+    if [[ -s "${output}.error.log" ]]; then
+        echo "error: Hopper exporter failed" >&2
+        echo "Hopper log: ${log_path}" >&2
+        sed -n '1,120p' "${log_path}" >&2 || true
+        echo "Exporter error log: ${output}.error.log" >&2
+        sed -n '1,160p' "${output}.error.log" >&2 || true
+        exit 1
+    fi
     if ((SECONDS >= deadline)); then
         echo "error: timed out waiting for Hopper export: ${output}" >&2
         echo "Hopper log: ${log_path}" >&2

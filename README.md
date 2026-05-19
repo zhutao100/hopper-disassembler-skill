@@ -91,6 +91,19 @@ hopper-disassembler-analysis/scripts/run_hopper_export.sh \
   /path/to/Target.app
 ```
 
+For repeated analysis of a large target, either leave the document open for MCP follow-up or save a reusable `.hop` database:
+
+```bash
+hopper-disassembler-analysis/scripts/run_hopper_export.sh \
+  --wait-for-analysis \
+  --save-hop /tmp/target.hop \
+  --output /tmp/target.hopper-snapshot.json \
+  /path/to/Target.app
+hopper-disassembler-analysis/scripts/run_hopper_export.sh \
+  --database /tmp/target.hop \
+  --output /tmp/target.reuse.hopper-snapshot.json
+```
+
 Search an existing snapshot without reopening Hopper:
 
 ```bash
@@ -137,7 +150,7 @@ hopper-disassembler-analysis/scripts/hopper_mcp_probe.py --json --call-tool sear
 
 ## Validation
 
-Portable validation that does not require Hopper:
+Portable validation that does not require Hopper. The validator also fails when bundled files in `references/`, `scripts/`, or `assets/` are not reachable from skill instructions or used scripts:
 
 ```bash
 hopper-disassembler-analysis/scripts/validate_skill_repo.py .

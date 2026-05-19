@@ -7,6 +7,7 @@ Use this reference when the task needs command-line Hopper runs, MCP setup, or r
 - [Quick Environment Checks](#quick-environment-checks)
 - [Pre-Hopper Target Inventory](#pre-hopper-target-inventory)
 - [Batch Snapshot Export](#batch-snapshot-export)
+- [Repeated Analysis Reuse](#repeated-analysis-reuse)
 - [Compact Snapshot Summaries](#compact-snapshot-summaries)
 - [Snapshot Evidence Search](#snapshot-evidence-search)
 - [Direct Hopper CLI](#direct-hopper-cli)
@@ -99,7 +100,7 @@ scripts/run_hopper_export.sh \
 
 Use `--include-pseudocode` only for focused exports. Hopper decompilation can be slow and pseudocode must be treated as a hypothesis. Keep `--max-pseudocode-chars` bounded; optimized Rust and Swift generics can produce megabytes of decompiler text for one source function.
 
-Use `--keep-open` when the user wants the Hopper GUI left open for interactive inspection after the export.
+Use `--keep-open` when the user wants the Hopper GUI left open for interactive inspection after the export. Use `--wait-for-analysis` only when the task needs a completed analysis database or snapshot; it can block on large targets.
 
 Implementation notes for future maintenance:
 
@@ -109,6 +110,54 @@ Implementation notes for future maintenance:
 - String rows include bounded `xrefs_to` entries. Use `--max-string-xrefs 0` to suppress this when a target has many string references, or increase it when string-to-code correlation is the main task.
 - Procedure rows include virtual addresses and file offsets for the entry point, sampled instructions, and call references when Hopper can map the address to a file offset. Procedure rows also report `basic_blocks_truncated`, each block reports `instructions_truncated`, and pseudocode rows report `pseudocode_length` plus `pseudocode_truncated`.
 - Use `--procedure-pattern` after string/name triage to export only matching procedure addresses, names, demangled names, or signatures.
+- For `--database`, the wrapper launches a small no-analysis bootstrap executable and has the Hopper Python exporter create a fresh document and call `loadDocumentAt(...)`, because Hopper's AppleScript `open database` command does not accept an `execute Python script` parameter. Override the bootstrap binary with `HOPPER_SKILL_DATABASE_BOOTSTRAP=/path/to/tiny-mach-o` only when `/bin/echo` is unavailable.
+
+## Repeated Analysis Reuse
+
+For large apps, decide reuse strategy before the first costly Hopper run:
+
+1. Keep Hopper open when the next step is live GUI/MCP exploration in the same session.
+2. Save a `.hop` database when follow-up passes may happen later or in another agent turn.
+3. Reopen the `.hop` database for focused exports instead of reopening the original Mach-O.
+
+Leave the active document open for MCP:
+
+```bash
+scripts/run_hopper_export.sh \
+  --keep-open \
+  --summary-output /tmp/target.hopper-summary.md \
+  --output /tmp/target.hopper-snapshot.json \
+  /path/to/target
+
+scripts/hopper_mcp_probe.py --json --call-tool list_documents
+scripts/hopper_mcp_probe.py --json --call-tool search_name --tool-args '{"pattern":"FunctionOrType"}'
+```
+
+Save and later reopen a Hopper database:
+
+```bash
+scripts/run_hopper_export.sh \
+  --wait-for-analysis \
+  --save-hop /tmp/target.hop \
+  --summary-output /tmp/target.hopper-summary.md \
+  --output /tmp/target.hopper-snapshot.json \
+  /path/to/target
+
+scripts/run_hopper_export.sh \
+  --database /tmp/target.hop \
+  --procedure-pattern 'FunctionOrType|0x100003f50' \
+  --max-procedures 20 \
+  --summary-output /tmp/target.focused-summary.md \
+  --output /tmp/target.focused-snapshot.json
+```
+
+Rules:
+
+- Store `.hop` databases in `/tmp` unless the user asks for a persistent artifact.
+- Save after `--wait-for-analysis` when the cost being avoided is full background analysis.
+- Skip `--wait-for-analysis` when a quick partial snapshot is enough; saved databases then contain the current partial analysis state.
+- Reopened `.hop` exports save the database before closing by default to avoid Hopper's unsaved-modifications prompt.
+- Do not pass `--arch` when reopening `.hop`; the database already encodes the selected slice.
 
 ## Compact Snapshot Summaries
 
@@ -174,7 +223,7 @@ hopper -l FAT -s AArch64e -l Mach-O -e /path/to/arm64e-universal-binary -Y /path
 Important flags:
 
 - `-e` / `--executable`: create a new Hopper document for a binary.
-- `-d` / `--database`: open an existing `.hop` database.
+- `-d` / `--database`: open an existing `.hop` database. For scripted exports from `.hop`, prefer `scripts/run_hopper_export.sh --database`; Hopper's AppleScript `open database` path does not accept `execute Python script`.
 - `-Y` / `--python`: execute a Python script after initial analysis.
 - `-y` / `--python-command`: execute a Python command after initial analysis.
 - `-a`, `-o`, `-f`, `-z`: enable analysis, Objective-C metadata, Swift metadata, and exception metadata.

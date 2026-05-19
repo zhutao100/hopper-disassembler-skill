@@ -7,6 +7,7 @@ Use this reference when writing or modifying scripts that run inside Hopper.
 - [Document Model](#document-model)
 - [Script Entrypoint Template](#script-entrypoint-template)
 - [Avoid Main-Thread Deadlocks](#avoid-main-thread-deadlocks)
+- [Database Persistence](#database-persistence)
 - [Enumerate Segments and Sections](#enumerate-segments-and-sections)
 - [Enumerate Procedures](#enumerate-procedures)
 - [Walk Basic Blocks and Instructions](#walk-basic-blocks-and-instructions)
@@ -90,7 +91,24 @@ or launch with Hopper's `-Y` option, which runs after initial analysis:
 hopper -a -o -f -z -l Mach-O -e /path/to/binary -Y /path/to/script.py
 ```
 
-Use blocking waits only in a known interactive script where the UI remains responsive.
+Use blocking waits only when the task needs completed background analysis, and prefer the wrapper's `--wait-for-analysis` option so the choice is explicit.
+
+## Database Persistence
+
+Use Hopper databases to avoid repeated disassembly of large targets:
+
+```python
+document.waitForBackgroundProcessToEnd()
+document.saveDocumentAt("/tmp/target.hop")
+```
+
+Inside an already running script, use an active or new document to load a saved database:
+
+```python
+document.loadDocumentAt("/tmp/target.hop")
+```
+
+For wrapper runs, reopen saved databases with `scripts/run_hopper_export.sh --database /tmp/target.hop`. `document.getDatabaseFilePath()` reports the active `.hop` path after saving or opening a database.
 
 ## Enumerate Segments and Sections
 

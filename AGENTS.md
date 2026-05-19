@@ -2,7 +2,7 @@
 
 This repository contains one installable skill: `hopper-disassembler-analysis`.
 
-Use the toolchain inventory → target inventory → bounded snapshot → evidence search loop as the default. Use address mapping before byte-level reasoning. Use the universal workspace generator for authorized slice mutation. Use live Hopper MCP only when a task needs the active Hopper document, focused pseudocode, live cursor state, or reviewed annotations.
+Use the toolchain inventory → target inventory → bounded snapshot → evidence search loop as the default. Use address mapping before byte-level reasoning. Use the universal workspace generator for authorized slice mutation. For long-running/repeated Hopper work, keep the document open for live MCP follow-up or save a reusable `.hop` database. Use live Hopper MCP only when a task needs the active Hopper document, focused pseudocode, live cursor state, or reviewed annotations.
 
 ## Standards
 
@@ -15,6 +15,7 @@ Maintain compatibility with current Codex CLI skills and the Open Agent Skills l
 - Put reusable templates and config snippets in `assets/`.
 - Put focused, conditionally loaded documentation in `references/`.
 - Keep file references one level deep from `SKILL.md`.
+- Keep bundled `references/`, `scripts/`, and `assets/` files reachable from `SKILL.md`/reference instructions or from used scripts; the validator fails orphaned resources.
 
 ## Development Workflow
 
