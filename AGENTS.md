@@ -4,6 +4,8 @@ This repository contains one installable skill: `hopper-disassembler-analysis`.
 
 Use the toolchain inventory → target inventory → bounded snapshot → evidence search loop as the default. Use address mapping before byte-level reasoning. Use the universal workspace generator for authorized slice mutation. For long-running/repeated Hopper work, keep the document open for live MCP follow-up or save a reusable `.hop` database. Use live Hopper MCP only when a task needs the active Hopper document, focused pseudocode, live cursor state, or reviewed annotations.
 
+Use `scripts/macho_lldb_disassemble.py` for small address/symbol ranges in very large Mach-O files before trying broad disassembly output. Never pass snapshot JSON to `run_hopper_export.sh --database`; that option is only for saved `.hop` databases.
+
 ## Standards
 
 Maintain compatibility with current Codex CLI skills and the Open Agent Skills layout:

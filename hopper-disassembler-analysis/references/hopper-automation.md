@@ -11,6 +11,7 @@ Use this reference when the task needs command-line Hopper runs, MCP setup, or r
 - [Compact Snapshot Summaries](#compact-snapshot-summaries)
 - [Snapshot Evidence Search](#snapshot-evidence-search)
 - [Direct Hopper CLI](#direct-hopper-cli)
+- [Focused LLDB Disassembly](#focused-lldb-disassembly)
 - [Focused Procedure Exports](#focused-procedure-exports)
 - [AppleScript Automation](#applescript-automation)
 - [Official Hopper MCP Server](#official-hopper-mcp-server)
@@ -111,6 +112,7 @@ Implementation notes for future maintenance:
 - Procedure rows include virtual addresses and file offsets for the entry point, sampled instructions, and call references when Hopper can map the address to a file offset. Procedure rows also report `basic_blocks_truncated`, each block reports `instructions_truncated`, and pseudocode rows report `pseudocode_length` plus `pseudocode_truncated`.
 - Use `--procedure-pattern` after string/name triage to export only matching procedure addresses, names, demangled names, or signatures.
 - For `--database`, the wrapper launches a small no-analysis bootstrap executable and has the Hopper Python exporter create a fresh document and call `loadDocumentAt(...)`, because Hopper's AppleScript `open database` command does not accept an `execute Python script` parameter. Override the bootstrap binary with `HOPPER_SKILL_DATABASE_BOOTSTRAP=/path/to/tiny-mach-o` only when `/bin/echo` is unavailable.
+- `--database` expects a Hopper `.hop` database. Snapshot JSON is not reusable input for this mode; use the original binary/app or save a `.hop` with `--save-hop`.
 
 ## Repeated Analysis Reuse
 
@@ -158,6 +160,7 @@ Rules:
 - Skip `--wait-for-analysis` when a quick partial snapshot is enough; saved databases then contain the current partial analysis state.
 - Reopened `.hop` exports save the database before closing by default to avoid Hopper's unsaved-modifications prompt.
 - Do not pass `--arch` when reopening `.hop`; the database already encodes the selected slice.
+- Do not pass snapshot JSON to `--database`; it will be rejected before Hopper is launched.
 
 ## Compact Snapshot Summaries
 
@@ -229,6 +232,31 @@ Important flags:
 - `-a`, `-o`, `-f`, `-z`: enable analysis, Objective-C metadata, Swift metadata, and exception metadata.
 - `-l FAT --aarch64 -l Mach-O`: select the ARM64 Mach-O slice from a universal binary.
 - `-l FAT -s AArch64e -l Mach-O`: select the ARM64e Mach-O slice when the FAT loader names it `AArch64e`.
+
+## Focused LLDB Disassembly
+
+For a known address range in a large binary, use LLDB batch disassembly instead of whole-binary `objdump` output:
+
+```bash
+scripts/macho_lldb_disassemble.py \
+  --arch arm64 \
+  --address 0x100003f50 \
+  --size 0x180 \
+  --output /tmp/target.range.disasm.txt \
+  /path/to/target
+```
+
+For exported symbols:
+
+```bash
+scripts/macho_lldb_disassemble.py \
+  --arch arm64 \
+  --symbol MsoShowAboutPanel \
+  --max-lines 200 \
+  /path/to/target
+```
+
+Use `macho_address_map.py` first when starting from a file offset. Keep the output bounded with `--size` and `--max-lines`; rerun with a wider range only after the first pass identifies useful branch targets.
 
 ## Focused Procedure Exports
 

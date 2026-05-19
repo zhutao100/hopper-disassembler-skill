@@ -99,6 +99,8 @@ Use Hopper as an evidence source for authorized local binary analysis. Prefer de
      --output /tmp/target.reuse.hopper-snapshot.json
    ```
 
+   `--database` only accepts Hopper `.hop` databases. Snapshot JSON files are evidence artifacts, not databases; pass the original binary/app again or create a `.hop` with `--save-hop`.
+
 4. Search evidence before making claims.
 
    ```bash
@@ -123,6 +125,16 @@ Use Hopper as an evidence source for authorized local binary analysis. Prefer de
    ```
 
    For universal files, keep three coordinates distinct: Hopper virtual address, slice-relative file offset, and absolute fat-file offset.
+
+   For a small symbol or address range in a large binary, prefer focused LLDB disassembly before broad `objdump` output:
+
+   ```bash
+   scripts/macho_lldb_disassemble.py \
+     --arch arm64 \
+     --address 0x100003f50 \
+     --size 0x180 \
+     /path/to/target
+   ```
 
 6. Use Hopper MCP for live document queries.
 
@@ -161,6 +173,7 @@ Use Hopper as an evidence source for authorized local binary analysis. Prefer de
 - `scripts/macos_toolchain_inventory.py`: Inventory built-in and popular macOS binary-analysis/mutation tools.
 - `scripts/inspect_macho_targets.py`: Inventory app-bundle and Mach-O analysis targets before Hopper runs.
 - `scripts/macho_address_map.py`: Parse thin/universal Mach-O files and map virtual addresses to slice-relative and absolute file offsets; use `--queries-only` for compact LLM-facing output.
+- `scripts/macho_lldb_disassemble.py`: Run bounded LLDB batch disassembly for focused symbols or address ranges without dumping a whole large binary.
 - `scripts/macho_universal_workspace.py`: Create a copy-only universal-slice workspace with compact plan metadata, full metadata files, generated recombine script, and app-copy install helper.
 - `scripts/run_hopper_export.sh`: Open a binary, `.app`, or existing `.hop` database in Hopper; run the bundled exporter; optionally write a compact Markdown summary; optionally save a `.hop`; and close the throwaway Hopper document by default.
 - `scripts/hopper_export_snapshot.py`: Hopper Python script that optionally waits for analysis and saves the active database, then exports metadata, segments, sections, strings with bounded xrefs, names, procedures, call refs, basic blocks, sampled instructions, comments, tags, file offsets, and bounded optional pseudocode.

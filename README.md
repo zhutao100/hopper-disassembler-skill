@@ -104,6 +104,8 @@ hopper-disassembler-analysis/scripts/run_hopper_export.sh \
   --output /tmp/target.reuse.hopper-snapshot.json
 ```
 
+`--database` expects a saved Hopper `.hop` database, not a snapshot JSON artifact.
+
 Search an existing snapshot without reopening Hopper:
 
 ```bash
@@ -121,6 +123,16 @@ hopper-disassembler-analysis/scripts/macho_address_map.py \
   --arch arm64 \
   --queries-only \
   --address 0x100003f50 \
+  /path/to/target
+```
+
+Disassemble a focused range without dumping a large binary:
+
+```bash
+hopper-disassembler-analysis/scripts/macho_lldb_disassemble.py \
+  --arch arm64 \
+  --address 0x100003f50 \
+  --size 0x180 \
   /path/to/target
 ```
 

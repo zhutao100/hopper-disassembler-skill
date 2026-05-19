@@ -31,6 +31,17 @@ def shorten(value: Any, limit: int = 220) -> str:
     return text[: limit - 3] + "..."
 
 
+def redact_path(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    home = str(Path.home())
+    if value == home:
+        return "~"
+    if value.startswith(home + "/"):
+        return "~/" + value[len(home) + 1 :]
+    return value
+
+
 def row_text(value: Any) -> str:
     if isinstance(value, dict):
         parts: list[str] = []
@@ -62,7 +73,9 @@ def compact_ref(ref: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def compact_procedure(row: dict[str, Any], max_refs: int, max_blocks: int) -> dict[str, Any]:
+def compact_procedure(
+    row: dict[str, Any], max_refs: int, max_blocks: int, max_instructions: int
+) -> dict[str, Any]:
     return {
         "address": row.get("address"),
         "file_offset": row.get("file_offset"),
@@ -86,7 +99,7 @@ def compact_procedure(row: dict[str, Any], max_refs: int, max_blocks: int) -> di
                         "args": ins.get("formatted_args") or [],
                         "comment": ins.get("comment") or ins.get("inline_comment") or "",
                     }
-                    for ins in (block.get("instructions") or [])[:8]
+                    for ins in (block.get("instructions") or [])[:max_instructions]
                 ],
             }
             for block in (row.get("basic_blocks") or [])[:max_blocks]
@@ -120,6 +133,7 @@ def find_matches(
     limit: int,
     max_refs: int,
     max_blocks: int,
+    max_instructions: int,
     max_string_chars: int,
 ) -> dict[str, Any]:
     procedures: list[dict[str, Any]] = []
@@ -129,7 +143,14 @@ def find_matches(
 
     for row in data.get("procedures") or []:
         if pattern_matches(row, patterns):
-            procedures.append(compact_procedure(row, max_refs=max_refs, max_blocks=max_blocks))
+            procedures.append(
+                compact_procedure(
+                    row,
+                    max_refs=max_refs,
+                    max_blocks=max_blocks,
+                    max_instructions=max_instructions,
+                )
+            )
     for row in data.get("strings") or []:
         if pattern_matches(row, patterns):
             strings.append(compact_string(row, max_refs=max_refs, max_chars=max_string_chars))
@@ -140,8 +161,12 @@ def find_matches(
         if pattern_matches(row, patterns):
             segments.append(row)
 
+    document = dict(data.get("document") or {})
+    for key in ("executable_path", "database_path"):
+        document[key] = redact_path(document.get(key))
+
     return {
-        "document": data.get("document") or {},
+        "document": document,
         "counts": data.get("counts") or {},
         "truncated": data.get("truncated") or {},
         "query": [pattern.pattern for pattern in patterns],
@@ -241,6 +266,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=24, help="Maximum rows per category.")
     parser.add_argument("--max-call-refs", type=int, default=8)
     parser.add_argument("--max-basic-blocks", type=int, default=2)
+    parser.add_argument("--max-instructions-per-block", type=int, default=4)
     parser.add_argument("--max-string-chars", type=int, default=260)
     return parser.parse_args()
 
@@ -257,6 +283,7 @@ def main() -> int:
             limit=max(0, args.limit),
             max_refs=max(0, args.max_call_refs),
             max_blocks=max(0, args.max_basic_blocks),
+            max_instructions=max(0, args.max_instructions_per_block),
             max_string_chars=max(0, args.max_string_chars),
         )
         text = (

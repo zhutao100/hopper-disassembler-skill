@@ -95,7 +95,20 @@ resolve_database() {
         echo "error: Hopper database is not a file: ${database}" >&2
         return 2
     fi
+    if [[ "${database}" != *.hop ]]; then
+        echo "error: --database expects a Hopper .hop database: ${database}" >&2
+        echo "hint: snapshot JSON files are not Hopper databases; pass the original binary/app, or create a .hop with --save-hop." >&2
+        return 2
+    fi
     abs_path "${database}"
+}
+
+validate_save_hop() {
+    local database="$1"
+    if [[ "${database}" != *.hop ]]; then
+        echo "error: --save-hop must end in .hop: ${database}" >&2
+        return 2
+    fi
 }
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
@@ -323,6 +336,7 @@ elif [[ "${file_info}" == *"Mach-O"* ]]; then
 fi
 
 if [[ -n "${save_hop}" ]]; then
+    validate_save_hop "${save_hop}"
     mkdir -p "$(dirname "${save_hop}")"
     save_hop="$(abs_path "${save_hop}")"
 fi
