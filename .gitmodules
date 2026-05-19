@@ -1,0 +1,14 @@
+[submodule "reference-checkout/hopper_mcp"]
+  path = reference-checkout/hopper_mcp
+  url = https://github.com/neverrend/hopper_mcp.git
+  shallow = true
+
+[submodule "reference-checkout/hopper_reverse_toolkit"]
+  path = reference-checkout/hopper_reverse_toolkit
+  url = https://github.com/HendrikReh/hopper_reverse_toolkit.git
+  shallow = true
+
+[submodule "reference-checkout/hopper-mcp"]
+  path = reference-checkout/hopper-mcp
+  url = https://github.com/shmsr/hopper-mcp.git
+  shallow = true

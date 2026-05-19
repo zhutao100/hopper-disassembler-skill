@@ -1,0 +1,6 @@
+locale	source_html	output_markdown
+English	/Applications/Hopper Disassembler.app/Contents/Resources/Hopper.help/Contents/Resources/English.lproj/Hopper.html	pages/English/Hopper.md
+English	/Applications/Hopper Disassembler.app/Contents/Resources/Hopper.help/Contents/Resources/English.lproj/mcp.html	pages/English/mcp.md
+English	/Applications/Hopper Disassembler.app/Contents/Resources/Hopper.help/Contents/Resources/English.lproj/regexp.html	pages/English/regexp.md
+English	/Applications/Hopper Disassembler.app/Contents/Resources/Hopper.help/Contents/Resources/English.lproj/script.html	pages/English/script.md
+English	/Applications/Hopper Disassembler.app/Contents/Resources/Hopper.help/Contents/Resources/English.lproj/tutorial.html	pages/English/tutorial.md
