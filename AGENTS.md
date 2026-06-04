@@ -6,6 +6,8 @@ Use the toolchain inventory → target inventory → bounded snapshot → eviden
 
 Use `scripts/macho_lldb_disassemble.py` for small address/symbol ranges in very large Mach-O files before trying broad disassembly output. Never pass snapshot JSON to `run_hopper_export.sh --database`; that option is only for saved `.hop` databases.
 
+For hybrid app-bundle work, inspect packaged web resources and cache/update validation paths before choosing a Mach-O-only patch. If a PoC modifies a universal binary for one architecture slice only, document that scope.
+
 ## Standards
 
 Maintain compatibility with current Codex CLI skills and the Open Agent Skills layout:

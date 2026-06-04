@@ -52,6 +52,16 @@ Prioritize:
 
 If source points to a framework or helper module, analyze that embedded Mach-O directly. Do not assume the main app executable contains the implementation.
 
+### Hybrid Resource Packs
+
+Many modern macOS apps use a native shell around packaged web or script resources. Before assigning an observed workflow to native code only:
+
+1. Inventory `Contents/Resources`, updater directories, and app-container caches for packaged assets such as `.asar`, `.pack`, prefixed ZIPs, generated `webfiles/`, or JavaScript chunk files.
+2. Identify container format and offsets with cheap tools first: `file`, `xxd`, `unzip -l`, `tar -tf`, `plutil`, `strings`, and `otool -L`.
+3. Extract resources into `/tmp`, search for the observed UI strings, URL schemes, API endpoints, reducer/effect names, and bridge selectors, then correlate those findings with Hopper strings/xrefs in the native loader.
+4. Check whether native code validates, decrypts, unpacks, updates, or caches the resource package. Resource-only edits may be ignored if a cached package wins, or rejected if a native signature/checksum gate must pass before the web layer is loaded.
+5. Separate client-side workflow gates from server-side or daemon-backed behavior. A local client edit can change local prompts, branching, and presentation, but a server-backed API call still needs server acceptance unless the app has a complete local fallback path.
+
 ## 2. Capture Baseline Metadata Outside Hopper
 
 Inventory the host toolchain when the exact macOS/Xcode setup matters:
@@ -272,6 +282,10 @@ APP_COPY_PATH=/tmp/Target.app /tmp/target.macho-workspace/install_rebuilt_into_a
 ```
 
 For local ad-hoc app tests, sign with local test entitlements only. Do not preserve production team, application-identifier, iCloud, or push entitlements with an ad-hoc identity.
+
+When modifying both Mach-O code and packaged resources, verify the resource container independently before signing the app copy. For prefixed ZIP-like containers, preserve the loader-required prefix, test the ZIP body with `unzip -t`, and use Hopper or LLDB disassembly to confirm whether the native loader passes the full container or an extracted body to its archive API.
+
+If a resource edit is accepted only after changing a native validation decision, patch the smallest fall-through branch that preserves normal extraction and output parameters. Record the Hopper virtual address, slice-relative offset, absolute fat-file offset, original bytes, replacement bytes, and architecture scope. Patch every architecture slice that the produced app must support; otherwise label the output as a slice-specific PoC.
 
 Manual equivalent:
 

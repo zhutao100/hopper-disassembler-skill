@@ -41,6 +41,8 @@ Use Hopper as an evidence source for authorized local binary analysis. Prefer de
 
    For `.app` bundles, analyze the main executable first, then helpers, embedded frameworks, XPC services, login items, and plugins when evidence points there. If a source snippet lives in an embedded component, analyze that Mach-O instead of forcing all evidence through the main executable.
 
+   For hybrid apps, inspect `Contents/Resources` and update/cache paths for packaged web assets such as `.asar`, `.pack`, prefixed ZIPs, or generated `webfiles/` bundles before assuming a workflow is implemented only in Mach-O code. Search extracted assets for the same strings/selectors you use in Hopper, then verify whether native code validates, decrypts, or replaces those resources at load time.
+
 3. Capture a bounded Hopper snapshot.
 
    ```bash
@@ -162,7 +164,7 @@ Use Hopper as an evidence source for authorized local binary analysis. Prefer de
    APP_COPY_PATH=/tmp/Target.app /tmp/target.macho-workspace/install_rebuilt_into_app.sh
    ```
 
-   For local ad-hoc app signatures, use local test entitlements only; do not preserve production team, application-identifier, iCloud, or push entitlements. Use `assets/authorized-mutation-checklist.md` and `assets/macho-slice-plan-template.json` for change review.
+   For local ad-hoc app signatures, use local test entitlements only; do not preserve production team, application-identifier, iCloud, or push entitlements. If a resource edit requires a native validation bypass, map and patch the validation decision in each architecture slice you intend to run, or document the PoC as slice-specific. Use `assets/authorized-mutation-checklist.md` and `assets/macho-slice-plan-template.json` for change review.
 
 8. Report with reproducibility.
 
